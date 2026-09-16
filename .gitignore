@@ -46,3 +46,10 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Cloudflare & Node.js
+node_modules/
+.wrangler/
+.dev.vars
+.env
+.env.*

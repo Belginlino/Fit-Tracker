@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fittrack/core/network/api_client.dart';
-import 'package:fittrack/core/network/api_endpoints.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:fittrack/core/supabase/supabase_config.dart';
 import '../domain/user_model.dart';
 
 abstract class AuthRepository {
@@ -15,30 +15,70 @@ abstract class AuthRepository {
   Future<void> deleteAccount();
 }
 
-/// Cloudflare Workers Auth Repository
-class CloudflareAuthRepository implements AuthRepository {
+/// Supabase Auth & Profiles Repository
+class SupabaseAuthRepository implements AuthRepository {
   final _controller = StreamController<UserProfile?>.broadcast();
   UserProfile? _currentUser;
+  StreamSubscription<AuthState>? _authSub;
 
-  CloudflareAuthRepository() {
-    _initSession();
+  SupabaseAuthRepository() {
+    _init();
   }
 
-  Future<void> _initSession() async {
-    await ApiClient.instance.init();
-    if (ApiClient.instance.isAuthenticated) {
-      try {
-        final data = await ApiClient.instance.get(ApiEndpoints.me);
-        if (data != null) {
-          _currentUser = UserProfile.fromMap(data, data['id']);
-          _controller.add(_currentUser);
-          return;
-        }
-      } catch (_) {
-        await ApiClient.instance.setToken(null);
-      }
+  void _init() {
+    if (!SupabaseConfig.isConfigured) {
+      _controller.add(null);
+      return;
     }
-    _controller.add(null);
+
+    try {
+      final client = Supabase.instance.client;
+      final initialSession = client.auth.currentSession;
+      if (initialSession != null) {
+        _fetchProfile(initialSession.user.id, initialSession.user.email);
+      } else {
+        _controller.add(null);
+      }
+
+      _authSub = client.auth.onAuthStateChange.listen((data) async {
+        final session = data.session;
+        if (session != null) {
+          await _fetchProfile(session.user.id, session.user.email);
+        } else {
+          _currentUser = null;
+          _controller.add(null);
+        }
+      });
+    } catch (_) {
+      _controller.add(null);
+    }
+  }
+
+  Future<void> _fetchProfile(String userId, String? email) async {
+    try {
+      final client = Supabase.instance.client;
+      final response = await client
+          .from('profiles')
+          .select()
+          .eq('id', userId)
+          .maybeSingle();
+
+      if (response != null) {
+        final map = Map<String, dynamic>.from(response);
+        map['email'] = email ?? '';
+        _currentUser = UserProfile.fromMap(map, userId);
+      } else {
+        _currentUser = UserProfile(
+          id: userId,
+          email: email ?? '',
+          name: email?.split('@').first ?? 'Athlete',
+          createdAt: DateTime.now(),
+        );
+      }
+      _controller.add(_currentUser);
+    } catch (_) {
+      _controller.add(_currentUser);
+    }
   }
 
   @override
@@ -49,151 +89,108 @@ class CloudflareAuthRepository implements AuthRepository {
 
   @override
   Future<UserProfile> signInWithEmail(String email, String password) async {
-    final data = await ApiClient.instance.post(ApiEndpoints.login, body: {
-      'email': email,
-      'password': password,
-    });
-
-    final token = data['token'] as String;
-    final userMap = data['user'] as Map<String, dynamic>;
-
-    await ApiClient.instance.setToken(token);
-    _currentUser = UserProfile.fromMap(userMap, userMap['id']);
-    _controller.add(_currentUser);
-    return _currentUser!;
+    final client = Supabase.instance.client;
+    final res = await client.auth.signInWithPassword(
+      email: email.trim(),
+      password: password,
+    );
+    final user = res.user;
+    if (user == null) {
+      throw Exception('Failed to sign in. Please verify your credentials.');
+    }
+    await _fetchProfile(user.id, user.email);
+    return _currentUser ??
+        UserProfile(
+          id: user.id,
+          email: user.email ?? email,
+          name: user.email?.split('@').first ?? 'Athlete',
+          createdAt: DateTime.now(),
+        );
   }
 
   @override
   Future<UserProfile> registerWithEmail(String email, String password, String name) async {
-    final data = await ApiClient.instance.post(ApiEndpoints.register, body: {
-      'email': email,
-      'password': password,
-      'name': name,
-    });
+    final client = Supabase.instance.client;
+    final res = await client.auth.signUp(
+      email: email.trim(),
+      password: password,
+      data: {'name': name},
+    );
+    final user = res.user;
+    if (user == null) {
+      throw Exception('Registration failed.');
+    }
 
-    final token = data['token'] as String;
-    final userMap = data['user'] as Map<String, dynamic>;
+    // Wait briefly for PostgreSQL trigger on_auth_user_created to run
+    await Future.delayed(const Duration(milliseconds: 500));
+    await _fetchProfile(user.id, user.email);
 
-    await ApiClient.instance.setToken(token);
-    _currentUser = UserProfile.fromMap(userMap, userMap['id']);
-    _controller.add(_currentUser);
-    return _currentUser!;
+    return _currentUser ??
+        UserProfile(
+          id: user.id,
+          email: user.email ?? email,
+          name: name,
+          hasCompletedOnboarding: false,
+          createdAt: DateTime.now(),
+        );
   }
 
   @override
   Future<void> sendPasswordReset(String email) async {
-    await Future.delayed(const Duration(milliseconds: 300));
+    final client = Supabase.instance.client;
+    await client.auth.resetPasswordForEmail(email.trim());
   }
 
   @override
   Future<void> updateProfile(UserProfile profile) async {
-    await ApiClient.instance.patch(ApiEndpoints.profile, body: profile.toMap());
+    final client = Supabase.instance.client;
+    String formattedTime = profile.reminderTime;
+    if (formattedTime.length == 5) {
+      formattedTime = '$formattedTime:00';
+    }
+
+    await client.from('profiles').upsert({
+      'id': profile.id,
+      'name': profile.name,
+      'goal': profile.goal,
+      'height': profile.height,
+      'current_weight': profile.currentWeight,
+      'target_weight': profile.targetWeight,
+      'preferred_reminder_time': formattedTime,
+      'workout_streak': profile.workoutStreak,
+      'photo_streak': profile.photoStreak,
+      'has_completed_onboarding': profile.hasCompletedOnboarding,
+    });
     _currentUser = profile;
     _controller.add(_currentUser);
   }
 
   @override
   Future<void> signOut() async {
-    await ApiClient.instance.setToken(null);
+    final client = Supabase.instance.client;
+    await client.auth.signOut();
     _currentUser = null;
     _controller.add(null);
   }
 
   @override
   Future<void> deleteAccount() async {
-    await ApiClient.instance.delete(ApiEndpoints.deleteAccount);
-    await ApiClient.instance.setToken(null);
-    _currentUser = null;
-    _controller.add(null);
-  }
-}
-
-/// Robust in-memory mock repository for instant offline demo and local fallback
-class LocalMockAuthRepository implements AuthRepository {
-  final _controller = StreamController<UserProfile?>.broadcast();
-
-  UserProfile? _currentUser = UserProfile(
-    id: 'demo-user-101',
-    email: 'athlete@fittrack.app',
-    name: 'Belgin',
-    goal: 'Build Muscle',
-    currentWeight: 74.2,
-    height: 178.0,
-    targetWeight: 78.0,
-    preferredWorkoutDays: const ['Mon', 'Tue', 'Wed', 'Fri', 'Sat'],
-    reminderTime: '18:30',
-    workoutStreak: 12,
-    photoStreak: 8,
-    hasCompletedOnboarding: true,
-    createdAt: DateTime.now().subtract(const Duration(days: 30)),
-  );
-
-  LocalMockAuthRepository() {
-    Future.microtask(() => _controller.add(_currentUser));
+    final client = Supabase.instance.client;
+    if (_currentUser != null) {
+      await client.from('profiles').delete().eq('id', _currentUser!.id);
+    }
+    await signOut();
   }
 
-  @override
-  Stream<UserProfile?> authStateChanges() => _controller.stream;
-
-  @override
-  UserProfile? get currentUser => _currentUser;
-
-  @override
-  Future<UserProfile> signInWithEmail(String email, String password) async {
-    await Future.delayed(const Duration(milliseconds: 400));
-    _currentUser = UserProfile(
-      id: 'demo-user-101',
-      email: email,
-      name: email.split('@').first.isNotEmpty ? email.split('@').first : 'Athlete',
-      createdAt: DateTime.now().subtract(const Duration(days: 14)),
-    );
-    _controller.add(_currentUser);
-    return _currentUser!;
-  }
-
-  @override
-  Future<UserProfile> registerWithEmail(String email, String password, String name) async {
-    await Future.delayed(const Duration(milliseconds: 400));
-    _currentUser = UserProfile(
-      id: 'demo-user-101',
-      email: email,
-      name: name,
-      hasCompletedOnboarding: false,
-      createdAt: DateTime.now(),
-    );
-    _controller.add(_currentUser);
-    return _currentUser!;
-  }
-
-  @override
-  Future<void> sendPasswordReset(String email) async {
-    await Future.delayed(const Duration(milliseconds: 300));
-  }
-
-  @override
-  Future<void> updateProfile(UserProfile profile) async {
-    _currentUser = profile;
-    _controller.add(_currentUser);
-  }
-
-  @override
-  Future<void> signOut() async {
-    _currentUser = null;
-    _controller.add(null);
-  }
-
-  @override
-  Future<void> deleteAccount() async {
-    _currentUser = null;
-    _controller.add(null);
+  void dispose() {
+    _authSub?.cancel();
+    _controller.close();
   }
 }
 
 // Global Riverpod Providers
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
-  // Uses LocalMockAuthRepository by default for seamless offline / demo usage,
-  // easily switched to CloudflareAuthRepository() when connecting to live worker.
-  return LocalMockAuthRepository();
+  return SupabaseAuthRepository();
 });
 
 final authStateChangesProvider = StreamProvider<UserProfile?>((ref) {

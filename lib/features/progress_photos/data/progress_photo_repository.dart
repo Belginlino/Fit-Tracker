@@ -1,7 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fittrack/core/network/api_client.dart';
-import 'package:fittrack/core/network/api_endpoints.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:fittrack/core/supabase/supabase_config.dart';
 import '../domain/progress_photo.dart';
 
 abstract class ProgressPhotoRepository {
@@ -11,8 +12,8 @@ abstract class ProgressPhotoRepository {
   Future<void> deletePhoto(String photoId);
 }
 
-/// Cloudflare Workers & R2 implementation
-class CloudflareProgressPhotoRepository implements ProgressPhotoRepository {
+/// Supabase Storage & PostgreSQL implementation for Progress Photos
+class SupabaseProgressPhotoRepository implements ProgressPhotoRepository {
   final _controller = StreamController<List<ProgressPhoto>>.broadcast();
   List<ProgressPhoto> _cache = [];
 
@@ -26,108 +27,140 @@ class CloudflareProgressPhotoRepository implements ProgressPhotoRepository {
     try {
       final photos = await getPhotos(userId);
       _cache = photos;
-      _controller.add(_cache);
+      _controller.add(List.unmodifiable(_cache));
     } catch (_) {
-      _controller.add(_cache);
+      _controller.add(List.unmodifiable(_cache));
     }
   }
 
   @override
   Future<List<ProgressPhoto>> getPhotos(String userId) async {
-    final data = await ApiClient.instance.get(ApiEndpoints.photos);
-    if (data is List) {
-      return data.map((json) => ProgressPhoto.fromMap(json, json['id'])).toList();
+    if (!SupabaseConfig.isConfigured) return [];
+
+    final client = Supabase.instance.client;
+    final records = await client
+        .from('progress_photos')
+        .select()
+        .eq('user_id', userId)
+        .order('created_at', ascending: false);
+
+    final photos = <ProgressPhoto>[];
+    for (final item in records as List<dynamic>) {
+      final storagePath = item['storage_path'] as String? ?? '';
+      String? downloadUrl;
+
+      if (storagePath.isNotEmpty) {
+        try {
+          downloadUrl = await client.storage
+              .from(SupabaseConfig.photosBucket)
+              .createSignedUrl(storagePath, 60 * 60 * 24 * 7); // 7 days
+        } catch (_) {}
+      }
+
+      photos.add(
+        ProgressPhoto(
+          id: item['id'] as String,
+          userId: item['user_id'] as String,
+          storagePath: storagePath,
+          downloadUrl: downloadUrl,
+          pose: item['pose'] as String? ?? 'Front',
+          workoutId: item['workout_id'] as String?,
+          weightAtCapture: (item['weight_at_capture'] as num?)?.toDouble(),
+          notes: item['notes'] as String?,
+          createdAt: DateTime.tryParse(item['created_at'] as String? ?? '') ?? DateTime.now(),
+        ),
+      );
     }
-    return [];
+
+    _cache = photos;
+    return photos;
   }
 
   @override
   Future<void> savePhoto(ProgressPhoto photo) async {
-    // Record photo metadata in D1
-    final data = await ApiClient.instance.post(ApiEndpoints.photos, body: {
+    if (!SupabaseConfig.isConfigured) return;
+
+    final client = Supabase.instance.client;
+    String storagePath = photo.storagePath;
+    String? downloadUrl = photo.downloadUrl;
+
+    // 1. Upload image to Supabase Storage if local file exists
+    if (photo.localFilePath != null) {
+      final file = File(photo.localFilePath!);
+      if (await file.exists()) {
+        final isPng = photo.localFilePath!.toLowerCase().endsWith('.png');
+        final ext = isPng ? 'png' : 'webp';
+        final mimeType = isPng ? 'image/png' : 'image/webp';
+        storagePath = '${photo.userId}/progress/${photo.id}/original.$ext';
+
+        await client.storage.from(SupabaseConfig.photosBucket).upload(
+              storagePath,
+              file,
+              fileOptions: FileOptions(contentType: mimeType, upsert: true),
+            );
+
+        try {
+          downloadUrl = await client.storage
+              .from(SupabaseConfig.photosBucket)
+              .createSignedUrl(storagePath, 60 * 60 * 24 * 30); // 30 days
+        } catch (_) {}
+      }
+    }
+
+    // 2. Insert metadata row in PostgreSQL
+    await client.from('progress_photos').upsert({
       'id': photo.id,
-      'objectKey': photo.storagePath,
+      'user_id': photo.userId,
+      'storage_path': storagePath,
       'pose': photo.pose,
-      'workoutId': photo.workoutId,
-      'weightAtCapture': photo.weightAtCapture,
+      'workout_id': photo.workoutId,
+      'weight_at_capture': photo.weightAtCapture,
       'notes': photo.notes,
+      'created_at': photo.createdAt.toIso8601String(),
     });
 
-    final created = ProgressPhoto.fromMap(data, data['id'] ?? photo.id);
+    final created = photo.copyWith(
+      storagePath: storagePath,
+      downloadUrl: downloadUrl,
+    );
+
+    _cache.removeWhere((p) => p.id == photo.id);
     _cache.insert(0, created);
     _controller.add(List.unmodifiable(_cache));
   }
 
   @override
   Future<void> deletePhoto(String photoId) async {
-    await ApiClient.instance.delete('${ApiEndpoints.photos}/$photoId');
+    if (!SupabaseConfig.isConfigured) return;
+
+    final client = Supabase.instance.client;
+
+    // 1. Fetch storage path to remove from Storage bucket
+    final existing = await client
+        .from('progress_photos')
+        .select('storage_path')
+        .eq('id', photoId)
+        .maybeSingle();
+
+    if (existing != null && existing['storage_path'] != null) {
+      try {
+        await client.storage
+            .from(SupabaseConfig.photosBucket)
+            .remove([existing['storage_path'] as String]);
+      } catch (_) {}
+    }
+
+    // 2. Delete metadata row in PostgreSQL
+    await client.from('progress_photos').delete().eq('id', photoId);
+
     _cache.removeWhere((p) => p.id == photoId);
     _controller.add(List.unmodifiable(_cache));
   }
 }
 
-/// Local mock repository for demo and offline fallback
-class LocalMockProgressPhotoRepository implements ProgressPhotoRepository {
-  final _controller = StreamController<List<ProgressPhoto>>.broadcast();
-
-  final List<ProgressPhoto> _photos = [
-    ProgressPhoto(
-      id: 'photo-3',
-      userId: 'demo-user-101',
-      storagePath: 'users/demo-user-101/progress/photo-3.jpg',
-      createdAt: DateTime.now().subtract(const Duration(days: 1)),
-      pose: 'Front',
-      weightAtCapture: 74.2,
-      notes: 'Shoulders looking fuller, post push-day pump.',
-    ),
-    ProgressPhoto(
-      id: 'photo-2',
-      userId: 'demo-user-101',
-      storagePath: 'users/demo-user-101/progress/photo-2.jpg',
-      createdAt: DateTime.now().subtract(const Duration(days: 14)),
-      pose: 'Front',
-      weightAtCapture: 72.8,
-      notes: 'Midway check-in. Energy is solid.',
-    ),
-    ProgressPhoto(
-      id: 'photo-1',
-      userId: 'demo-user-101',
-      storagePath: 'users/demo-user-101/progress/photo-1.jpg',
-      createdAt: DateTime.now().subtract(const Duration(days: 30)),
-      pose: 'Front',
-      weightAtCapture: 71.0,
-      notes: 'Day 1 starting condition.',
-    ),
-  ];
-
-  LocalMockProgressPhotoRepository() {
-    Future.microtask(() => _controller.add(_photos));
-  }
-
-  @override
-  Stream<List<ProgressPhoto>> getPhotosStream(String userId) => _controller.stream;
-
-  @override
-  Future<List<ProgressPhoto>> getPhotos(String userId) async {
-    return List.unmodifiable(_photos);
-  }
-
-  @override
-  Future<void> savePhoto(ProgressPhoto photo) async {
-    _photos.insert(0, photo);
-    _controller.add(List.unmodifiable(_photos));
-  }
-
-  @override
-  Future<void> deletePhoto(String photoId) async {
-    _photos.removeWhere((p) => p.id == photoId);
-    _controller.add(List.unmodifiable(_photos));
-  }
-}
-
-// Riverpod Providers
+// Global Riverpod Providers
 final progressPhotoRepositoryProvider = Provider<ProgressPhotoRepository>((ref) {
-  return LocalMockProgressPhotoRepository();
+  return SupabaseProgressPhotoRepository();
 });
 
 final progressPhotosStreamProvider = StreamProvider.family<List<ProgressPhoto>, String>((ref, userId) {

@@ -80,22 +80,33 @@ class UserProfile {
   }
 
   factory UserProfile.fromMap(Map<String, dynamic> map, String id) {
+    final daysRaw = map['preferredWorkoutDays'] ?? map['preferred_days'] ?? map['preferred_workout_days'];
+    List<String> days = const ['Mon', 'Tue', 'Thu', 'Fri'];
+    if (daysRaw is List) {
+      days = daysRaw.map((e) => e.toString()).toList();
+    } else if (daysRaw is String) {
+      try {
+        final decoded = daysRaw.replaceAll('[', '').replaceAll(']', '').replaceAll('"', '').split(',');
+        days = decoded.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+      } catch (_) {}
+    }
+
     return UserProfile(
       id: id,
       email: map['email'] as String? ?? '',
       name: map['name'] as String? ?? 'Athlete',
       goal: map['goal'] as String? ?? 'Build Muscle',
-      currentWeight: (map['currentWeight'] as num?)?.toDouble() ?? 74.2,
+      currentWeight: (map['currentWeight'] ?? map['current_weight'] as num?)?.toDouble() ?? 74.2,
       height: (map['height'] as num?)?.toDouble() ?? 178.0,
-      targetWeight: (map['targetWeight'] as num?)?.toDouble() ?? 78.0,
-      preferredWorkoutDays: (map['preferredWorkoutDays'] as List<dynamic>?)?.map((e) => e.toString()).toList() ??
-          const ['Mon', 'Tue', 'Thu', 'Fri'],
-      reminderTime: map['reminderTime'] as String? ?? '18:00',
-      workoutStreak: (map['workoutStreak'] as num?)?.toInt() ?? 0,
-      photoStreak: (map['photoStreak'] as num?)?.toInt() ?? 0,
-      hasCompletedOnboarding: map['hasCompletedOnboarding'] as bool? ?? true,
-      createdAt: map['createdAt'] != null
-          ? DateTime.tryParse(map['createdAt'] as String) ?? DateTime.now()
+      targetWeight: (map['targetWeight'] ?? map['target_weight'] as num?)?.toDouble() ?? 78.0,
+      preferredWorkoutDays: days,
+      reminderTime: (map['reminderTime'] ?? map['preferred_reminder_time'] ?? map['reminder_time']) as String? ?? '18:00',
+      workoutStreak: (map['workoutStreak'] ?? map['workout_streak'] as num?)?.toInt() ?? 0,
+      photoStreak: (map['photoStreak'] ?? map['photo_streak'] as num?)?.toInt() ?? 0,
+      hasCompletedOnboarding: (map['hasCompletedOnboarding'] ?? map['has_completed_onboarding']) == 1 ||
+          (map['hasCompletedOnboarding'] ?? map['has_completed_onboarding']) == true,
+      createdAt: (map['createdAt'] ?? map['created_at']) != null
+          ? DateTime.tryParse((map['createdAt'] ?? map['created_at']) as String) ?? DateTime.now()
           : DateTime.now(),
     );
   }
