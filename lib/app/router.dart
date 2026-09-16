@@ -1,0 +1,171 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../features/analytics/presentation/analytics_screen.dart';
+import '../features/auth/presentation/screens/login_screen.dart';
+import '../features/auth/presentation/screens/register_screen.dart';
+import '../features/dashboard/presentation/dashboard_screen.dart';
+import '../features/measurements/presentation/body_measurements_screen.dart';
+import '../features/measurements/presentation/weight_tracker_screen.dart';
+import '../features/onboarding/presentation/screens/onboarding_screen.dart';
+import '../features/profile/presentation/profile_screen.dart';
+import '../features/progress_photos/presentation/calendar_screen.dart';
+import '../features/progress_photos/presentation/camera_screen.dart';
+import '../features/progress_photos/presentation/comparison_screen.dart';
+import '../features/progress_photos/presentation/photo_preview_screen.dart';
+import '../features/progress_photos/presentation/timeline_screen.dart';
+import '../features/workouts/presentation/new_workout_screen.dart';
+import '../features/workouts/presentation/workout_screen.dart';
+
+final routerProvider = Provider<GoRouter>((ref) {
+  return GoRouter(
+    initialLocation: '/home',
+    routes: [
+      // Auth & Onboarding Routes
+      GoRoute(
+        path: '/login',
+        builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: '/register',
+        builder: (context, state) => const RegisterScreen(),
+      ),
+      GoRoute(
+        path: '/onboarding',
+        builder: (context, state) => const OnboardingScreen(),
+      ),
+
+      // Camera Modal Route
+      GoRoute(
+        path: '/camera',
+        builder: (context, state) => const CameraScreen(),
+      ),
+      GoRoute(
+        path: '/progress/preview',
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>?;
+          return PhotoPreviewScreen(
+            imagePath: extra?['imagePath'] ?? '',
+            initialPose: extra?['pose'] ?? 'Front',
+          );
+        },
+      ),
+
+      // Dedicated Comparison & Calendar Routes
+      GoRoute(
+        path: '/progress/compare',
+        builder: (context, state) => const ComparisonScreen(),
+      ),
+      GoRoute(
+        path: '/progress/calendar',
+        builder: (context, state) => const CalendarScreen(),
+      ),
+
+      // Workout Logging Route
+      GoRoute(
+        path: '/workouts/new',
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>?;
+          return NewWorkoutScreen(
+            templateTitle: extra?['templateTitle'],
+          );
+        },
+      ),
+
+      // Measurements Routes
+      GoRoute(
+        path: '/measurements/weight',
+        builder: (context, state) => const WeightTrackerScreen(),
+      ),
+      GoRoute(
+        path: '/measurements/body',
+        builder: (context, state) => const BodyMeasurementsScreen(),
+      ),
+
+      // Main App Shell with Bottom Navigation (Section 6)
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) {
+          return Scaffold(
+            body: navigationShell,
+            bottomNavigationBar: BottomNavigationBar(
+              currentIndex: navigationShell.currentIndex,
+              onTap: (index) => navigationShell.goBranch(
+                index,
+                initialLocation: index == navigationShell.currentIndex,
+              ),
+              items: const [
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.home_outlined),
+                  activeIcon: Icon(Icons.home_filled),
+                  label: 'Home',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.auto_graph_outlined),
+                  activeIcon: Icon(Icons.auto_graph_rounded),
+                  label: 'Progress',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.fitness_center_outlined),
+                  activeIcon: Icon(Icons.fitness_center_rounded),
+                  label: 'Workout',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.insights_rounded),
+                  activeIcon: Icon(Icons.insights_rounded),
+                  label: 'Analytics',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.person_outline_rounded),
+                  activeIcon: Icon(Icons.person_rounded),
+                  label: 'Profile',
+                ),
+              ],
+            ),
+          );
+        },
+        branches: [
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/home',
+                builder: (context, state) => const DashboardScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/progress',
+                builder: (context, state) => const TimelineScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/workouts',
+                builder: (context, state) => const WorkoutScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/analytics',
+                builder: (context, state) => const AnalyticsScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/profile',
+                builder: (context, state) => const ProfileScreen(),
+              ),
+            ],
+          ),
+        ],
+      ),
+    ],
+  );
+});

@@ -1,0 +1,20 @@
+name = "fittrack-api"
+main = "src/index.ts"
+compatibility_date = "2024-09-01"
+compatibility_flags = ["nodejs_compat"]
+account_id = "c555a94ce6300869a343e764919837fd"
+
+[vars]
+JWT_SECRET = "fittrack_super_secure_jwt_secret_key_change_in_production"
+ENVIRONMENT = "production"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "fittrack-db"
+database_id = "5ad45a92-d092-47d2-9eb1-5a2d45111cb9"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "PHOTOS_BUCKET"
+bucket_name = "fittrack-progress-photos"
+preview_bucket_name = "fittrack-progress-photos-dev"
