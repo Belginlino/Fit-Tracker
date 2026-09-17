@@ -133,10 +133,26 @@ class AppwriteAuthRepository implements AuthRepository {
   @override
   Future<UserProfile> signInWithEmail(String email, String password) async {
     try {
-      await AppwriteClient.instance.account.createEmailPasswordSession(
-        email: email.trim(),
-        password: password,
-      );
+      try {
+        await AppwriteClient.instance.account.createEmailPasswordSession(
+          email: email.trim(),
+          password: password,
+        );
+      } on AppwriteException catch (e) {
+        if (e.type == 'user_session_already_exists' ||
+            (e.message?.toLowerCase().contains('session is active') ?? false)) {
+          try {
+            await AppwriteClient.instance.account.deleteSession(sessionId: 'current');
+          } catch (_) {}
+          await AppwriteClient.instance.account.createEmailPasswordSession(
+            email: email.trim(),
+            password: password,
+          );
+        } else {
+          rethrow;
+        }
+      }
+
       final user = await AppwriteClient.instance.account.get();
       await _fetchProfile(user.$id, user.email, name: user.name);
 
@@ -165,7 +181,11 @@ class AppwriteAuthRepository implements AuthRepository {
         name: name.trim(),
       );
 
-      // Immediately log in to establish active session
+      // Clear any prior session and log in to establish active session
+      try {
+        await AppwriteClient.instance.account.deleteSession(sessionId: 'current');
+      } catch (_) {}
+
       await AppwriteClient.instance.account.createEmailPasswordSession(
         email: email.trim(),
         password: password,
