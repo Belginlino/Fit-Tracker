@@ -13,6 +13,7 @@ class AppTextField extends StatefulWidget {
   final Widget? prefixIcon;
   final Widget? suffixIcon;
   final int maxLines;
+  final int? maxLength;
   final bool readOnly;
   final VoidCallback? onTap;
   final void Function(String)? onChanged;
@@ -28,6 +29,7 @@ class AppTextField extends StatefulWidget {
     this.prefixIcon,
     this.suffixIcon,
     this.maxLines = 1,
+    this.maxLength,
     this.readOnly = false,
     this.onTap,
     this.onChanged,
@@ -68,11 +70,13 @@ class _AppTextFieldState extends State<AppTextField> {
             keyboardType: widget.keyboardType,
             obscureText: widget.isPassword ? _obscureText : false,
             maxLines: widget.maxLines,
+            maxLength: widget.maxLength,
             readOnly: widget.readOnly,
             onTap: widget.onTap,
             onChanged: widget.onChanged,
             style: AppTypography.bodyLarge,
             decoration: InputDecoration(
+              counterText: '',
               hintText: widget.hint,
               prefixIcon: widget.prefixIcon,
               suffixIcon: widget.isPassword

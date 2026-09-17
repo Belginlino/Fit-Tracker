@@ -23,12 +23,15 @@ class DashboardScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(currentUserProfileProvider);
-    final userId = user?.id ?? 'athlete-user';
+    final userId = user?.id ?? '';
     final photosAsync = ref.watch(progressPhotosStreamProvider(userId));
     final workoutsAsync = ref.watch(workoutsStreamProvider(userId));
 
-    final name =
-        (user?.name != null && user!.name.isNotEmpty) ? user.name : 'Athlete';
+    final name = (user?.name != null && user!.name.isNotEmpty)
+        ? user.name
+        : (user?.email != null && user!.email.isNotEmpty)
+            ? user.email.split('@').first
+            : 'Champion';
     final now = DateTime.now();
 
     final workouts = workoutsAsync.value ?? [];
@@ -269,18 +272,47 @@ class DashboardScreen extends ConsumerWidget {
               photosAsync.when(
                 data: (photosList) {
                   if (photosList.isEmpty) {
-                    return const AppCard(
-                      child: Center(
-                        child: Text(
-                          'No progress photos yet. Tap Add Photo above!',
-                          style: AppTypography.bodyMedium,
-                        ),
+                    return AppCard(
+                      onTap: () => context.push('/camera'),
+                      child: Column(
+                        children: [
+                          const Icon(Icons.add_a_photo_outlined,
+                              color: AppColors.primary, size: 32),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Capture Your Day 1 Baseline Photo',
+                            style: AppTypography.titleMedium,
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Start tracking your transformation from day one.',
+                            style: AppTypography.bodySmall,
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Text(
+                              '+ Add Day 1 Photo',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     );
                   }
 
                   return SizedBox(
-                    height: 140,
+                    height: 145,
                     child: ListView.builder(
                       scrollDirection: Axis.horizontal,
                       itemCount: photosList.length,
@@ -289,15 +321,51 @@ class DashboardScreen extends ConsumerWidget {
                         return Container(
                           width: 110,
                           margin: const EdgeInsets.only(right: 16),
-                          child: NeumorphicContainer(
-                            borderRadius: 16,
-                            padding: EdgeInsets.zero,
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(16),
-                              child: AppPhotoImage(
-                                localPath: photo.localFilePath,
-                                remoteUrl: photo.downloadUrl,
-                                fit: BoxFit.cover,
+                          child: GestureDetector(
+                            onTap: () => context.push('/progress/preview', extra: {
+                              'imagePath': photo.localFilePath ?? photo.downloadUrl ?? '',
+                              'pose': photo.pose,
+                              'selectedDate': photo.createdAt.toIso8601String(),
+                              'dayNumber': photo.effectiveDayNumber,
+                              'notes': photo.cleanNotes,
+                            }),
+                            child: NeumorphicContainer(
+                              borderRadius: 16,
+                              padding: EdgeInsets.zero,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(16),
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    AppPhotoImage(
+                                      localPath: photo.localFilePath,
+                                      remoteUrl: photo.downloadUrl,
+                                      fit: BoxFit.cover,
+                                    ),
+                                    Positioned(
+                                      top: 6,
+                                      left: 6,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 6, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: photo.isDayOne
+                                              ? const Color(0xFFD97706)
+                                              : Colors.black.withValues(alpha: 0.65),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          photo.isDayOne ? '★ Day 1' : photo.dayLabel,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),

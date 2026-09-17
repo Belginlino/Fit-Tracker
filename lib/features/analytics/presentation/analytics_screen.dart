@@ -22,7 +22,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProfileProvider);
-    final userId = user?.id ?? 'athlete-user';
+    final userId = user?.id ?? '';
     final prsAsync = ref.watch(personalRecordsProvider(userId));
     final workoutsAsync = ref.watch(workoutsStreamProvider(userId));
 

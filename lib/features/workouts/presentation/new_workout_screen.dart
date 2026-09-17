@@ -117,7 +117,7 @@ class _NewWorkoutScreenState extends ConsumerState<NewWorkoutScreen> {
 
     final workout = Workout(
       id: 'workout-${DateTime.now().millisecondsSinceEpoch}',
-      userId: user?.id ?? 'athlete-user',
+      userId: user?.id ?? 'user-local',
       title: _titleController.text.trim().isNotEmpty
           ? _titleController.text.trim()
           : 'Workout',

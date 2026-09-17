@@ -113,7 +113,7 @@ class _BodyMeasurementsScreenState
                                 await repo.saveMeasurement(
                                   BodyMeasurement(
                                     id: 'bm-${DateTime.now().millisecondsSinceEpoch}',
-                                    userId: user?.id ?? 'athlete-user',
+                                    userId: user?.id ?? '',
                                     type: _selectedPart,
                                     value: val,
                                     unit: 'cm',
@@ -141,7 +141,7 @@ class _BodyMeasurementsScreenState
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProfileProvider);
     final measurementsAsync =
-        ref.watch(bodyCircumferenceStreamProvider(user?.id ?? 'athlete-user'));
+        ref.watch(bodyCircumferenceStreamProvider(user?.id ?? ''));
 
     return Scaffold(
       appBar: AppBar(

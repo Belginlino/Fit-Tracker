@@ -19,7 +19,7 @@ class WorkoutScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(currentUserProfileProvider);
     final workoutsAsync =
-        ref.watch(workoutsStreamProvider(user?.id ?? 'athlete-user'));
+        ref.watch(workoutsStreamProvider(user?.id ?? ''));
 
     return Scaffold(
       appBar: AppBar(

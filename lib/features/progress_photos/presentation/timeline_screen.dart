@@ -25,7 +25,7 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProfileProvider);
     final photosAsync =
-        ref.watch(progressPhotosStreamProvider(user?.id ?? 'athlete-user'));
+        ref.watch(progressPhotosStreamProvider(user?.id ?? ''));
 
     return Scaffold(
       appBar: AppBar(
@@ -151,10 +151,14 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
   Widget _buildGridCard(ProgressPhoto photo) {
     return GestureDetector(
       onTap: () => context.push('/progress/preview', extra: {
-        'imagePath': photo.localFilePath,
+        'imagePath': photo.localFilePath ?? photo.downloadUrl ?? '',
         'pose': photo.pose,
+        'selectedDate': photo.createdAt.toIso8601String(),
+        'dayNumber': photo.effectiveDayNumber,
+        'notes': photo.cleanNotes,
       }),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: NeumorphicContainer(
@@ -162,18 +166,81 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
               padding: EdgeInsets.zero,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
-                child: AppPhotoImage(
-                  localPath: photo.localFilePath,
-                  remoteUrl: photo.downloadUrl,
-                  fit: BoxFit.cover,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    AppPhotoImage(
+                      localPath: photo.localFilePath,
+                      remoteUrl: photo.downloadUrl,
+                      fit: BoxFit.cover,
+                    ),
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: photo.isDayOne
+                              ? const Color(0xFFD97706) // Warm gold for Day 1
+                              : Colors.black.withValues(alpha: 0.65),
+                          borderRadius: BorderRadius.circular(8),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.2),
+                              blurRadius: 4,
+                            ),
+                          ],
+                        ),
+                        child: Text(
+                          photo.isDayOne ? '★ Day 1' : photo.dayLabel,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          photo.pose,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
+          Text(
+            photo.isDayOne
+                ? 'Day 1 • Baseline'
+                : '${photo.dayLabel} • ${photo.pose}',
+            style: AppTypography.labelMedium.copyWith(
+              color: photo.isDayOne ? AppColors.primary : AppColors.textPrimary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 2),
           Text(
             DateFormatter.formatTimelineDate(photo.createdAt),
-            style: AppTypography.labelMedium,
+            style: AppTypography.bodySmall.copyWith(fontSize: 11),
           ),
         ],
       ),

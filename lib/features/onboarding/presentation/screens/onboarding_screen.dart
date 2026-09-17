@@ -8,7 +8,6 @@ import 'package:fittrack/core/widgets/neumorphic_container.dart';
 import 'package:fittrack/core/widgets/app_card.dart';
 import 'package:fittrack/core/widgets/app_text_field.dart';
 import 'package:fittrack/features/auth/data/auth_repository.dart';
-import 'package:fittrack/features/auth/domain/user_model.dart';
 
 class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({super.key});
@@ -121,15 +120,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     try {
       final repo = ref.read(authRepositoryProvider);
       final current = repo.currentUser;
-      final base = current ??
-          UserProfile(
-            id: 'athlete-user',
-            email: 'athlete@fittrack.local',
-            name: 'Athlete',
-            createdAt: DateTime.now(),
-          );
+      if (current == null) {
+        if (mounted) context.go('/login');
+        return;
+      }
 
-      final updated = base.copyWith(
+      final updated = current.copyWith(
         goal: _selectedGoal,
         currentWeight: double.tryParse(_weightController.text) ?? 74.2,
         height: double.tryParse(_heightController.text) ?? 178.0,

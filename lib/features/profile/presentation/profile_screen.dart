@@ -6,11 +6,170 @@ import 'package:fittrack/app/theme/app_colors.dart';
 import 'package:fittrack/app/theme/app_typography.dart';
 import 'package:fittrack/core/widgets/app_button.dart';
 import 'package:fittrack/core/widgets/app_card.dart';
+import 'package:fittrack/core/widgets/app_text_field.dart';
 import 'package:fittrack/core/widgets/neumorphic_container.dart';
 import 'package:fittrack/features/auth/data/auth_repository.dart';
+import 'package:fittrack/core/services/pin_service.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
+
+  Future<void> _managePinDialog(BuildContext context, WidgetRef ref) async {
+    final pinState = ref.read(pinServiceProvider);
+    final pinNotifier = ref.read(pinServiceProvider.notifier);
+
+    if (pinState.isPinEnabled) {
+      // Option to disable or change PIN
+      await showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppColors.cardBackground,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('PIN Security Settings'),
+          content: const Text(
+              'PIN protection is currently enabled on this device.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Close',
+                  style: TextStyle(color: AppColors.textSecondary)),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.of(ctx).pop();
+                await pinNotifier.disablePin();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('PIN protection disabled.'),
+                      backgroundColor: AppColors.textSecondary,
+                    ),
+                  );
+                }
+              },
+              child: const Text('Disable PIN',
+                  style: TextStyle(color: AppColors.error)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _promptSetPin(context, ref);
+              },
+              child: const Text('Change PIN'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      _promptSetPin(context, ref);
+    }
+  }
+
+  Future<void> _promptSetPin(BuildContext context, WidgetRef ref) async {
+    final pinNotifier = ref.read(pinServiceProvider.notifier);
+    final pinController = TextEditingController();
+    final confirmController = TextEditingController();
+    String? pinError;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: AppColors.cardBackground,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            children: [
+              Icon(Icons.shield_outlined, color: AppColors.primary),
+              SizedBox(width: 8),
+              Text('Set 4-Digit PIN', style: TextStyle(fontSize: 18)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Enter a 4-digit security PIN to protect your app.',
+                style: AppTypography.bodySmall,
+              ),
+              const SizedBox(height: 16),
+              AppTextField(
+                label: 'Enter 4-digit PIN',
+                hint: '••••',
+                controller: pinController,
+                keyboardType: TextInputType.number,
+                isPassword: true,
+                maxLength: 4,
+              ),
+              const SizedBox(height: 12),
+              AppTextField(
+                label: 'Confirm PIN',
+                hint: '••••',
+                controller: confirmController,
+                keyboardType: TextInputType.number,
+                isPassword: true,
+                maxLength: 4,
+              ),
+              if (pinError != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  pinError!,
+                  style: const TextStyle(color: AppColors.error, fontSize: 12),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel',
+                  style: TextStyle(color: AppColors.textSecondary)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: () async {
+                final pin = pinController.text.trim();
+                final confirm = confirmController.text.trim();
+                if (pin.length != 4 || int.tryParse(pin) == null) {
+                  setDialogState(() => pinError = 'PIN must be exactly 4 digits');
+                  return;
+                }
+                if (pin != confirm) {
+                  setDialogState(() => pinError = 'PINs do not match');
+                  return;
+                }
+
+                await pinNotifier.enablePin(pin);
+                if (ctx.mounted) Navigator.of(ctx).pop();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('PIN protection enabled! ✓'),
+                      backgroundColor: AppColors.success,
+                    ),
+                  );
+                }
+              },
+              child: const Text('Save PIN'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   void _exportUserData(BuildContext context, dynamic user) {
     final exportedJson = const JsonEncoder.withIndent('  ').convert({
@@ -145,8 +304,14 @@ class ProfileScreen extends ConsumerWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(user?.name ?? 'Athlete',
-                            style: AppTypography.titleLarge),
+                        Text(
+                          (user?.name != null && user!.name.isNotEmpty)
+                              ? user.name
+                              : (user?.email != null && user!.email.isNotEmpty)
+                                  ? user.email.split('@').first
+                                  : 'Champion',
+                          style: AppTypography.titleLarge,
+                        ),
                         const SizedBox(height: 4),
                         Text(user?.email ?? '',
                             style: AppTypography.bodyMedium),
@@ -230,6 +395,19 @@ class ProfileScreen extends ConsumerWidget {
             const Text('Account & Preferences', style: AppTypography.labelLarge),
             const SizedBox(height: 16),
 
+            Consumer(
+              builder: (context, ref, child) {
+                final pinState = ref.watch(pinServiceProvider);
+                return _buildSettingTile(
+                  icon: Icons.shield_outlined,
+                  title: 'PIN Protection Lock',
+                  subtitle: pinState.isPinEnabled
+                      ? 'Enabled • 4-digit PIN active on this device'
+                      : 'Disabled • Tap to setup PIN lock',
+                  onTap: () => _managePinDialog(context, ref),
+                );
+              },
+            ),
             _buildSettingTile(
               icon: Icons.scale_rounded,
               title: 'Body Circumference Measurements',

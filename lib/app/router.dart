@@ -18,9 +18,59 @@ import '../features/progress_photos/presentation/timeline_screen.dart';
 import '../features/workouts/presentation/new_workout_screen.dart';
 import '../features/workouts/presentation/workout_screen.dart';
 
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../core/supabase/supabase_config.dart';
+import '../core/services/pin_service.dart';
+import '../features/auth/data/auth_repository.dart';
+import '../features/auth/presentation/screens/pin_lock_screen.dart';
+
+class RouterNotifier extends ChangeNotifier {
+  final Ref _ref;
+
+  RouterNotifier(this._ref) {
+    _ref.listen(authStateChangesProvider, (_, __) => notifyListeners());
+    _ref.listen(pinServiceProvider, (_, __) => notifyListeners());
+  }
+}
+
+final routerNotifierProvider = Provider<RouterNotifier>((ref) {
+  return RouterNotifier(ref);
+});
+
 final routerProvider = Provider<GoRouter>((ref) {
+  final notifier = ref.watch(routerNotifierProvider);
+
   return GoRouter(
-    initialLocation: '/home',
+    initialLocation: '/login',
+    refreshListenable: notifier,
+    redirect: (context, state) {
+      final authRepo = ref.read(authRepositoryProvider);
+      final hasLocalSession = SupabaseConfig.isConfigured &&
+          Supabase.instance.client.auth.currentSession != null;
+      final isLoggedIn = hasLocalSession || authRepo.currentUser != null;
+
+      final pinState = ref.read(pinServiceProvider);
+      final currentLoc = state.matchedLocation;
+      final isAuthRoute =
+          currentLoc == '/login' || currentLoc == '/register';
+
+      // 1. If not logged in, enforce login/register
+      if (!isLoggedIn) {
+        return isAuthRoute ? null : '/login';
+      }
+
+      // 2. If logged in, check PIN protection
+      if (pinState.isPinEnabled && !pinState.isUnlocked) {
+        return currentLoc == '/pin-lock' ? null : '/pin-lock';
+      }
+
+      // 3. If logged in and unlocked (or no PIN), prevent staying on auth or pin-lock
+      if (isAuthRoute || currentLoc == '/pin-lock') {
+        return '/home';
+      }
+
+      return null;
+    },
     routes: [
       // Auth & Onboarding Routes
       GoRoute(
@@ -30,6 +80,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/register',
         builder: (context, state) => const RegisterScreen(),
+      ),
+      GoRoute(
+        path: '/pin-lock',
+        builder: (context, state) => const PinLockScreen(),
       ),
       GoRoute(
         path: '/onboarding',
@@ -48,6 +102,11 @@ final routerProvider = Provider<GoRouter>((ref) {
           return PhotoPreviewScreen(
             imagePath: extra?['imagePath'] ?? '',
             initialPose: extra?['pose'] ?? 'Front',
+            initialNotes: extra?['notes'],
+            initialDate: extra?['selectedDate'] != null
+                ? DateTime.tryParse(extra!['selectedDate'] as String)
+                : null,
+            initialDayNumber: extra?['dayNumber'] as int?,
           );
         },
       ),

@@ -8,6 +8,8 @@ import 'package:fittrack/core/widgets/app_text_field.dart';
 import 'package:fittrack/core/widgets/neumorphic_container.dart';
 import '../../data/auth_repository.dart';
 
+import 'package:fittrack/core/services/pin_service.dart';
+
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -17,8 +19,8 @@ class LoginScreen extends ConsumerStatefulWidget {
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController(text: 'athlete@fittrack.app');
-  final _passwordController = TextEditingController(text: 'Password123!');
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -46,7 +48,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         if (!user.hasCompletedOnboarding) {
           context.go('/onboarding');
         } else {
-          context.go('/home');
+          // If PIN is enabled, verify or mark unlocked
+          final pinState = ref.read(pinServiceProvider);
+          if (pinState.isPinEnabled) {
+            context.go('/pin-lock');
+          } else {
+            context.go('/home');
+          }
         }
       }
     } catch (e) {
@@ -62,6 +70,119 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         });
       }
     }
+  }
+
+  Future<void> _togglePinProtection(bool enable) async {
+    final pinNotifier = ref.read(pinServiceProvider.notifier);
+    if (!enable) {
+      await pinNotifier.disablePin();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('PIN protection disabled.'),
+            backgroundColor: AppColors.textSecondary,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Prompt user to set a 4-digit PIN
+    final pinController = TextEditingController();
+    final confirmController = TextEditingController();
+    String? pinError;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: AppColors.cardBackground,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            children: [
+              Icon(Icons.shield_outlined, color: AppColors.primary),
+              SizedBox(width: 8),
+              Text('Set 4-Digit PIN', style: TextStyle(fontSize: 18)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Create a 4-digit security PIN for rapid app access and protection.',
+                style: AppTypography.bodySmall,
+              ),
+              const SizedBox(height: 16),
+              AppTextField(
+                label: 'Enter 4-digit PIN',
+                hint: '••••',
+                controller: pinController,
+                keyboardType: TextInputType.number,
+                isPassword: true,
+                maxLength: 4,
+              ),
+              const SizedBox(height: 12),
+              AppTextField(
+                label: 'Confirm PIN',
+                hint: '••••',
+                controller: confirmController,
+                keyboardType: TextInputType.number,
+                isPassword: true,
+                maxLength: 4,
+              ),
+              if (pinError != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  pinError!,
+                  style: const TextStyle(color: AppColors.error, fontSize: 12),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel',
+                  style: TextStyle(color: AppColors.textSecondary)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: () async {
+                final pin = pinController.text.trim();
+                final confirm = confirmController.text.trim();
+                if (pin.length != 4 || int.tryParse(pin) == null) {
+                  setDialogState(() => pinError = 'PIN must be exactly 4 digits');
+                  return;
+                }
+                if (pin != confirm) {
+                  setDialogState(() => pinError = 'PINs do not match');
+                  return;
+                }
+
+                await pinNotifier.enablePin(pin);
+                if (ctx.mounted) Navigator.of(ctx).pop();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('PIN protection enabled! ✓'),
+                      backgroundColor: AppColors.success,
+                    ),
+                  );
+                }
+              },
+              child: const Text('Save PIN'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -134,6 +255,58 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         : null,
                   ),
                   const SizedBox(height: 16),
+
+                  // PIN Protection Settings Card (User can enable/disable PIN lock right in login)
+                  Consumer(
+                    builder: (context, ref, child) {
+                      final pinState = ref.watch(pinServiceProvider);
+                      return NeumorphicContainer(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
+                        borderRadius: 14,
+                        child: Row(
+                          children: [
+                            const NeumorphicContainer(
+                              shape: BoxShape.circle,
+                              padding: EdgeInsets.all(8),
+                              child: Icon(Icons.pin_rounded,
+                                  color: AppColors.primary, size: 20),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'PIN Protection',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 14,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                  Text(
+                                    pinState.isPinEnabled
+                                        ? '4-digit PIN is active'
+                                        : 'Quick PIN lock disabled',
+                                    style: AppTypography.bodySmall
+                                        .copyWith(fontSize: 11),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Switch.adaptive(
+                              value: pinState.isPinEnabled,
+                              activeTrackColor: AppColors.primary,
+                              onChanged: (val) => _togglePinProtection(val),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton(
@@ -147,11 +320,28 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
                   AppButton(
                     label: 'Sign In',
                     isLoading: _isLoading,
                     onPressed: _handleLogin,
+                  ),
+                  Consumer(
+                    builder: (context, ref, child) {
+                      final pinState = ref.watch(pinServiceProvider);
+                      final currentUser = ref.watch(currentUserProfileProvider);
+                      if (pinState.isPinEnabled && currentUser != null) {
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 14),
+                          child: AppButton(
+                            label: 'Unlock with PIN',
+                            type: AppButtonType.outline,
+                            onPressed: () => context.go('/pin-lock'),
+                          ),
+                        );
+                      }
+                      return const SizedBox.shrink();
+                    },
                   ),
                   const SizedBox(height: 32),
                   const Center(

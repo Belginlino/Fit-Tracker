@@ -24,7 +24,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProfileProvider);
     final photosAsync =
-        ref.watch(progressPhotosStreamProvider(user?.id ?? 'athlete-user'));
+        ref.watch(progressPhotosStreamProvider(user?.id ?? ''));
 
     return Scaffold(
       appBar: AppBar(
@@ -33,7 +33,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       body: photosAsync.when(
         data: (photos) {
           final workoutsAsync =
-              ref.watch(workoutsStreamProvider(user?.id ?? 'athlete-user'));
+              ref.watch(workoutsStreamProvider(user?.id ?? ''));
           final workouts = workoutsAsync.value ?? [];
           return SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

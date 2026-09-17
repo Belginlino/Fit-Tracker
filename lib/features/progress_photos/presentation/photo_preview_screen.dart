@@ -11,16 +11,22 @@ import 'package:fittrack/core/widgets/app_photo_image.dart';
 import '../data/progress_photo_repository.dart';
 import '../domain/progress_photo.dart';
 
+import 'package:intl/intl.dart';
+
 class PhotoPreviewScreen extends ConsumerStatefulWidget {
   final String imagePath;
   final String initialPose;
   final String? initialNotes;
+  final DateTime? initialDate;
+  final int? initialDayNumber;
 
   const PhotoPreviewScreen({
     super.key,
     required this.imagePath,
     this.initialPose = 'Front',
     this.initialNotes,
+    this.initialDate,
+    this.initialDayNumber,
   });
 
   @override
@@ -31,12 +37,16 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
   late String _selectedPose;
   late TextEditingController _weightController;
   late TextEditingController _notesController;
+  late DateTime _selectedDate;
+  late int _selectedDay;
   bool _isSaving = false;
 
   @override
   void initState() {
     super.initState();
     _selectedPose = widget.initialPose;
+    _selectedDate = widget.initialDate ?? DateTime.now();
+    _selectedDay = widget.initialDayNumber ?? 1;
     final initialWeight =
         ref.read(currentUserProfileProvider)?.currentWeight ?? 70.0;
     _weightController =
@@ -51,6 +61,31 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
     super.dispose();
   }
 
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: AppColors.primary,
+              onPrimary: Colors.white,
+              surface: AppColors.cardBackground,
+              onSurface: AppColors.textPrimary,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      setState(() => _selectedDate = picked);
+    }
+  }
+
   Future<void> _savePhoto() async {
     setState(() => _isSaving = true);
     final authRepo = ref.read(authRepositoryProvider);
@@ -59,13 +94,15 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
     final currentWeight = double.tryParse(_weightController.text) ??
         (user?.currentWeight ?? 70.0);
 
+    final userId = user?.id ?? 'user-local';
     final newPhoto = ProgressPhoto(
       id: 'photo-${DateTime.now().millisecondsSinceEpoch}',
-      userId: user?.id ?? 'athlete-user',
+      userId: userId,
       storagePath:
-          'users/${user?.id ?? 'athlete-user'}/progress_photos/${DateTime.now().millisecondsSinceEpoch}.jpg',
+          'users/$userId/progress_photos/${DateTime.now().millisecondsSinceEpoch}.jpg',
       localFilePath: widget.imagePath,
-      createdAt: DateTime.now(),
+      createdAt: _selectedDate,
+      dayNumber: _selectedDay,
       pose: _selectedPose,
       weightAtCapture: currentWeight,
       notes: _notesController.text.trim().isNotEmpty
@@ -85,8 +122,8 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
     if (mounted) {
       setState(() => _isSaving = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Progress photo recorded successfully! ✓'),
+        SnackBar(
+          content: Text('Day $_selectedDay progress photo saved! ✓'),
           backgroundColor: AppColors.success,
         ),
       );
@@ -130,7 +167,54 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
+
+              // Day & Date Info Card
+              NeumorphicContainer(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                borderRadius: 16,
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _selectedDay == 1
+                            ? AppColors.primary
+                            : AppColors.primary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        _selectedDay == 1 ? 'Day 1 ★ Baseline' : 'Day $_selectedDay',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: _selectedDay == 1 ? Colors.white : AppColors.primary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Recorded For', style: AppTypography.bodySmall),
+                          Text(
+                            DateFormat('EEE, MMM d, yyyy').format(_selectedDate),
+                            style: AppTypography.titleMedium.copyWith(fontSize: 14),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.edit_calendar_rounded,
+                          color: AppColors.primary, size: 22),
+                      tooltip: 'Change Date',
+                      onPressed: _pickDate,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
 
               // Pose Selector (readonly looking but tappable)
               const Text('Pose', style: AppTypography.labelLarge),

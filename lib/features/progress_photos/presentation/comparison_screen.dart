@@ -22,15 +22,135 @@ class ComparisonScreen extends ConsumerStatefulWidget {
 class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
   ComparisonMode _mode = ComparisonMode.slider;
   double _sliderPosition = 0.5; // 0.0 (all before) to 1.0 (all after)
-  final int _beforeIndex = 2; // Oldest
-  final int _afterIndex = 0; // Newest
+  String? _selectedBeforeId;
+  String? _selectedAfterId;
   String _selectedPose = 'Front';
+
+  void _showPhotoSelectorSheet(
+      List<ProgressPhoto> photos, bool isBefore, String currentId) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.cardBackground,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      isBefore ? 'Select "Before" Photo' : 'Select "After" Photo',
+                      style: AppTypography.titleLarge,
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.45,
+                  ),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: photos.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (context, index) {
+                      final photo = photos[index];
+                      final isSelected = photo.id == currentId;
+                      return GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            if (isBefore) {
+                              _selectedBeforeId = photo.id;
+                            } else {
+                              _selectedAfterId = photo.id;
+                            }
+                          });
+                          Navigator.pop(ctx);
+                        },
+                        child: NeumorphicContainer(
+                          padding: const EdgeInsets.all(12),
+                          borderRadius: 14,
+                          style: isSelected
+                              ? NeumorphicStyle.inset
+                              : NeumorphicStyle.raised,
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(8),
+                                  color: AppColors.background,
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: AppPhotoImage(
+                                    localPath: photo.localFilePath,
+                                    remoteUrl: photo.downloadUrl,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text(
+                                          photo.isDayOne ? '★ Day 1 (Baseline)' : photo.dayLabel,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            color: photo.isDayOne ? AppColors.primary : AppColors.textPrimary,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text('• ${photo.pose}', style: AppTypography.bodySmall),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${DateFormatter.formatTimelineDate(photo.createdAt)} • ${photo.weightAtCapture != null ? "${photo.weightAtCapture!.toStringAsFixed(1)} kg" : "No weight recorded"}',
+                                      style: AppTypography.bodySmall,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (isSelected)
+                                const Icon(Icons.check_circle_rounded,
+                                    color: AppColors.primary, size: 22),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProfileProvider);
     final photosAsync =
-        ref.watch(progressPhotosStreamProvider(user?.id ?? 'athlete-user'));
+        ref.watch(progressPhotosStreamProvider(user?.id ?? ''));
 
     return Scaffold(
       appBar: AppBar(
@@ -76,7 +196,7 @@ class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
                         style: AppTypography.titleLarge),
                     const SizedBox(height: 8),
                     Text(
-                      'Capture at least two "$_selectedPose" photos to compare your visual transformation.',
+                      'Capture at least two "$_selectedPose" photos to compare your visual transformation from Day 1.',
                       textAlign: TextAlign.center,
                       style: AppTypography.bodyMedium,
                     ),
@@ -86,12 +206,23 @@ class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
             );
           }
 
-          final beforePhoto = _beforeIndex < filtered.length
-              ? filtered[_beforeIndex]
-              : filtered.last;
-          final afterPhoto = _afterIndex < filtered.length
-              ? filtered[_afterIndex]
-              : filtered.first;
+          // Pick before photo: prefer explicit selection, else photo marked as Day 1, else oldest
+          final beforePhoto = filtered.firstWhere(
+            (p) => p.id == _selectedBeforeId,
+            orElse: () => filtered.firstWhere(
+              (p) => p.isDayOne,
+              orElse: () => filtered.last,
+            ),
+          );
+
+          // Pick after photo: prefer explicit selection, else newest photo (first in descending list)
+          final afterPhoto = filtered.firstWhere(
+            (p) => p.id == _selectedAfterId,
+            orElse: () => filtered.firstWhere(
+              (p) => p.id != beforePhoto.id,
+              orElse: () => filtered.first,
+            ),
+          );
 
           final daysApart = afterPhoto.createdAt
               .difference(beforePhoto.createdAt)
@@ -152,7 +283,111 @@ class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
+
+                // Interactive Day Selector Row
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => _showPhotoSelectorSheet(
+                            filtered, true, beforePhoto.id),
+                        child: NeumorphicContainer(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
+                          borderRadius: 12,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                children: [
+                                  Text('BEFORE',
+                                      style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w800,
+                                          color: AppColors.textSecondary)),
+                                  SizedBox(width: 4),
+                                  Icon(Icons.touch_app_rounded,
+                                      size: 12, color: AppColors.primary),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                beforePhoto.isDayOne
+                                    ? '★ Day 1 (Baseline)'
+                                    : beforePhoto.dayLabel,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.primary,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                DateFormatter.formatTimelineDate(
+                                    beforePhoto.createdAt),
+                                style: AppTypography.bodySmall
+                                    .copyWith(fontSize: 11),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8),
+                      child: Icon(Icons.arrow_forward_rounded,
+                          size: 18, color: AppColors.textMuted),
+                    ),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => _showPhotoSelectorSheet(
+                            filtered, false, afterPhoto.id),
+                        child: NeumorphicContainer(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
+                          borderRadius: 12,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                children: [
+                                  Text('AFTER',
+                                      style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w800,
+                                          color: AppColors.textSecondary)),
+                                  SizedBox(width: 4),
+                                  Icon(Icons.touch_app_rounded,
+                                      size: 12, color: AppColors.primary),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                afterPhoto.dayLabel,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.primary,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                DateFormatter.formatTimelineDate(
+                                    afterPhoto.createdAt),
+                                style: AppTypography.bodySmall
+                                    .copyWith(fontSize: 11),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
 
                 // Comparison Viewer
                 _mode == ComparisonMode.slider

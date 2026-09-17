@@ -83,7 +83,7 @@ class _WeightTrackerScreenState extends ConsumerState<WeightTrackerScreen> {
 
                             final newEntry = BodyMeasurement(
                               id: 'w-${DateTime.now().millisecondsSinceEpoch}',
-                              userId: user?.id ?? 'athlete-user',
+                              userId: user?.id ?? '',
                               type: 'Weight',
                               value: weightVal,
                               unit: 'kg',
@@ -116,7 +116,7 @@ class _WeightTrackerScreenState extends ConsumerState<WeightTrackerScreen> {
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProfileProvider);
     final historyAsync =
-        ref.watch(weightHistoryStreamProvider(user?.id ?? 'athlete-user'));
+        ref.watch(weightHistoryStreamProvider(user?.id ?? ''));
 
     final records = historyAsync.value ?? [];
     final startWeight =

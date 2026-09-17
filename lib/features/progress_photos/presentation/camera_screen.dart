@@ -10,6 +10,8 @@ import 'package:fittrack/core/widgets/app_text_field.dart';
 import 'package:fittrack/core/widgets/neumorphic_container.dart';
 import 'package:fittrack/features/auth/data/auth_repository.dart';
 
+import 'package:intl/intl.dart';
+
 class CameraScreen extends ConsumerStatefulWidget {
   const CameraScreen({super.key});
 
@@ -21,11 +23,38 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
   final ImagePicker _picker = ImagePicker();
   String _selectedPose = 'Front';
   final _notesController = TextEditingController();
+  DateTime _selectedDate = DateTime.now();
+  int _selectedDay = 1;
 
   @override
   void dispose() {
     _notesController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: AppColors.primary,
+              onPrimary: Colors.white,
+              surface: AppColors.cardBackground,
+              onSurface: AppColors.textPrimary,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      setState(() => _selectedDate = picked);
+    }
   }
 
   Future<void> _capture(ImageSource source) async {
@@ -41,6 +70,8 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
           'imagePath': image.path,
           'pose': _selectedPose,
           'notes': _notesController.text,
+          'selectedDate': _selectedDate.toIso8601String(),
+          'dayNumber': _selectedDay,
         });
       }
     } catch (e) {
@@ -116,7 +147,158 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
                 type: AppButtonType.outline,
                 onPressed: () => _capture(ImageSource.gallery),
               ),
-              const SizedBox(height: 36),
+              const SizedBox(height: 32),
+
+              // Day & Date Selection (From Day 1 onwards)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Day & Date', style: AppTypography.labelLarge),
+                  if (_selectedDay == 1)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        '★ Baseline',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              // Date Picker Card
+              GestureDetector(
+                onTap: _pickDate,
+                child: NeumorphicContainer(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  borderRadius: 14,
+                  child: Row(
+                    children: [
+                      const Icon(Icons.calendar_month_rounded,
+                          color: AppColors.primary, size: 22),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Photo Date', style: AppTypography.bodySmall),
+                            Text(
+                              DateFormat('EEEE, MMM d, yyyy').format(_selectedDate),
+                              style: AppTypography.titleMedium.copyWith(fontSize: 15),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.edit_calendar_rounded,
+                          color: AppColors.textMuted, size: 20),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+
+              // Day Stepper & Quick Presets
+              NeumorphicContainer(
+                padding: const EdgeInsets.all(14),
+                borderRadius: 14,
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Transformation Day:', style: AppTypography.bodyMedium),
+                        Row(
+                          children: [
+                            GestureDetector(
+                              onTap: () {
+                                if (_selectedDay > 1) {
+                                  setState(() => _selectedDay--);
+                                }
+                              },
+                              child: const NeumorphicContainer(
+                                width: 36,
+                                height: 36,
+                                shape: BoxShape.circle,
+                                child: Icon(Icons.remove, size: 18, color: AppColors.primary),
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              child: Text(
+                                'Day $_selectedDay',
+                                style: AppTypography.titleLarge.copyWith(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () {
+                                setState(() => _selectedDay++);
+                              },
+                              child: const NeumorphicContainer(
+                                width: 36,
+                                height: 36,
+                                shape: BoxShape.circle,
+                                child: Icon(Icons.add, size: 18, color: AppColors.primary),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [1, 7, 14, 30, 60, 90, 180].map((d) {
+                          final isSelected = _selectedDay == d;
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: GestureDetector(
+                              onTap: () => setState(() => _selectedDay = d),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? AppColors.primary
+                                      : AppColors.surface,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? AppColors.primary
+                                        : AppColors.border,
+                                  ),
+                                ),
+                                child: Text(
+                                  d == 1 ? 'Day 1 (Start)' : 'Day $d',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: isSelected
+                                        ? Colors.white
+                                        : AppColors.textPrimary,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 32),
 
               // Photo Type
               const Text('Photo Type', style: AppTypography.labelLarge),

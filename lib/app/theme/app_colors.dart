@@ -10,6 +10,7 @@ class AppColors {
   static const Color surface = Color(0xFFEEE8DC);
   static const Color card =
       Color(0xFFEEE8DC); // Same as surface for flat neumorphism
+  static const Color cardBackground = Color(0xFFEEE8DC);
 
   // Shadows
   static const Color shadow = Color(0xFFD1C7B7);
