@@ -1,7 +1,8 @@
 import 'dart:async';
+import 'package:appwrite/appwrite.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:fittrack/core/supabase/supabase_config.dart';
+import 'package:fittrack/core/appwrite/appwrite_client.dart';
+import 'package:fittrack/core/appwrite/appwrite_config.dart';
 import '../domain/user_model.dart';
 
 abstract class AuthRepository {
@@ -16,66 +17,110 @@ abstract class AuthRepository {
   Future<void> deleteAccount();
 }
 
-/// Supabase Auth & Profiles Repository
-class SupabaseAuthRepository implements AuthRepository {
+/// Appwrite Auth & Profiles Repository
+class AppwriteAuthRepository implements AuthRepository {
   final _controller = StreamController<UserProfile?>.broadcast();
   UserProfile? _currentUser;
-  StreamSubscription<AuthState>? _authSub;
 
-  SupabaseAuthRepository() {
+  AppwriteAuthRepository() {
     _init();
   }
 
-  void _init() {
-    if (!SupabaseConfig.isConfigured) {
+  void _init() async {
+    if (!AppwriteConfig.isConfigured) {
       _controller.add(null);
       return;
     }
 
     try {
-      final client = Supabase.instance.client;
-      final initialSession = client.auth.currentSession;
-      if (initialSession != null) {
-        _fetchProfile(initialSession.user.id, initialSession.user.email);
-      } else {
-        _controller.add(null);
-      }
-
-      _authSub = client.auth.onAuthStateChange.listen((data) async {
-        final session = data.session;
-        if (session != null) {
-          await _fetchProfile(session.user.id, session.user.email);
-        } else {
-          _currentUser = null;
-          _controller.add(null);
-        }
-      });
+      final user = await AppwriteClient.instance.account.get();
+      await _fetchProfile(user.$id, user.email, name: user.name);
     } catch (_) {
+      _currentUser = null;
       _controller.add(null);
     }
   }
 
-  Future<void> _fetchProfile(String userId, String? email) async {
+  Future<void> _fetchProfile(String userId, String? email, {String? name}) async {
     try {
-      final client = Supabase.instance.client;
-      final response =
-          await client.from('profiles').select().eq('id', userId).maybeSingle();
+      final doc = await AppwriteClient.instance.databases.getDocument(
+        databaseId: AppwriteConfig.databaseId,
+        collectionId: AppwriteConfig.profilesCollection,
+        documentId: userId,
+      );
 
-      if (response != null) {
-        final map = Map<String, dynamic>.from(response);
-        map['email'] = email ?? '';
-        _currentUser = UserProfile.fromMap(map, userId);
+      final map = Map<String, dynamic>.from(doc.data);
+      map['email'] = email ?? '';
+      _currentUser = UserProfile.fromMap(map, userId);
+      _controller.add(_currentUser);
+    } on AppwriteException catch (e) {
+      if (e.code == 404) {
+        // Document does not exist yet; create default profile
+        final defaultProfile = UserProfile(
+          id: userId,
+          email: email ?? '',
+          name: (name != null && name.isNotEmpty)
+              ? name
+              : (email?.split('@').first ?? 'Athlete'),
+          createdAt: DateTime.now(),
+        );
+        await _createProfileDoc(defaultProfile);
+        _currentUser = defaultProfile;
+        _controller.add(_currentUser);
       } else {
         _currentUser = UserProfile(
           id: userId,
           email: email ?? '',
-          name: email?.split('@').first ?? 'Athlete',
+          name: (name != null && name.isNotEmpty)
+              ? name
+              : (email?.split('@').first ?? 'Athlete'),
           createdAt: DateTime.now(),
         );
+        _controller.add(_currentUser);
       }
-      _controller.add(_currentUser);
     } catch (_) {
+      _currentUser = UserProfile(
+        id: userId,
+        email: email ?? '',
+        name: (name != null && name.isNotEmpty)
+            ? name
+            : (email?.split('@').first ?? 'Athlete'),
+        createdAt: DateTime.now(),
+      );
       _controller.add(_currentUser);
+    }
+  }
+
+  Future<void> _createProfileDoc(UserProfile profile) async {
+    try {
+      String formattedTime = profile.reminderTime;
+      if (formattedTime.length == 5) {
+        formattedTime = '$formattedTime:00';
+      }
+
+      await AppwriteClient.instance.databases.createDocument(
+        databaseId: AppwriteConfig.databaseId,
+        collectionId: AppwriteConfig.profilesCollection,
+        documentId: profile.id,
+        data: {
+          'name': profile.name,
+          'goal': profile.goal,
+          'height': profile.height,
+          'current_weight': profile.currentWeight,
+          'target_weight': profile.targetWeight,
+          'preferred_reminder_time': formattedTime,
+          'workout_streak': profile.workoutStreak,
+          'photo_streak': profile.photoStreak,
+          'has_completed_onboarding': profile.hasCompletedOnboarding,
+        },
+        permissions: [
+          Permission.read(Role.user(profile.id)),
+          Permission.update(Role.user(profile.id)),
+          Permission.delete(Role.user(profile.id)),
+        ],
+      );
+    } catch (_) {
+      // Ignored for offline or if collection has different schema
     }
   }
 
@@ -87,57 +132,73 @@ class SupabaseAuthRepository implements AuthRepository {
 
   @override
   Future<UserProfile> signInWithEmail(String email, String password) async {
-    final client = Supabase.instance.client;
-    final res = await client.auth.signInWithPassword(
-      email: email.trim(),
-      password: password,
-    );
-    final user = res.user;
-    if (user == null) {
-      throw Exception('Failed to sign in. Please verify your credentials.');
+    try {
+      await AppwriteClient.instance.account.createEmailPasswordSession(
+        email: email.trim(),
+        password: password,
+      );
+      final user = await AppwriteClient.instance.account.get();
+      await _fetchProfile(user.$id, user.email, name: user.name);
+
+      return _currentUser ??
+          UserProfile(
+            id: user.$id,
+            email: user.email,
+            name: user.name.isNotEmpty
+                ? user.name
+                : (user.email.split('@').first),
+            createdAt: DateTime.now(),
+          );
+    } catch (e) {
+      throw Exception(AppwriteClient.formatError(e));
     }
-    await _fetchProfile(user.id, user.email);
-    return _currentUser ??
-        UserProfile(
-          id: user.id,
-          email: user.email ?? email,
-          name: user.email?.split('@').first ?? 'Athlete',
-          createdAt: DateTime.now(),
-        );
   }
 
   @override
   Future<UserProfile> registerWithEmail(
       String email, String password, String name) async {
-    final client = Supabase.instance.client;
-    final res = await client.auth.signUp(
-      email: email.trim(),
-      password: password,
-      data: {'name': name},
-    );
-    final user = res.user;
-    if (user == null) {
-      throw Exception('Registration failed.');
+    try {
+      final user = await AppwriteClient.instance.account.create(
+        userId: ID.unique(),
+        email: email.trim(),
+        password: password,
+        name: name.trim(),
+      );
+
+      // Immediately log in to establish active session
+      await AppwriteClient.instance.account.createEmailPasswordSession(
+        email: email.trim(),
+        password: password,
+      );
+
+      final newProfile = UserProfile(
+        id: user.$id,
+        email: user.email,
+        name: name.trim(),
+        hasCompletedOnboarding: false,
+        createdAt: DateTime.now(),
+      );
+
+      await _createProfileDoc(newProfile);
+      _currentUser = newProfile;
+      _controller.add(_currentUser);
+
+      return newProfile;
+    } catch (e) {
+      throw Exception(AppwriteClient.formatError(e));
     }
-
-    // Wait briefly for PostgreSQL trigger on_auth_user_created to run
-    await Future.delayed(const Duration(milliseconds: 500));
-    await _fetchProfile(user.id, user.email);
-
-    return _currentUser ??
-        UserProfile(
-          id: user.id,
-          email: user.email ?? email,
-          name: name,
-          hasCompletedOnboarding: false,
-          createdAt: DateTime.now(),
-        );
   }
 
   @override
   Future<void> sendPasswordReset(String email) async {
-    final client = Supabase.instance.client;
-    await client.auth.resetPasswordForEmail(email.trim());
+    try {
+      await AppwriteClient.instance.account.createRecovery(
+        email: email.trim(),
+        url: '${AppwriteConfig.endpoint}/recovery',
+      );
+    } catch (e) {
+      throw Exception(AppwriteClient.formatError(e));
+    }
   }
 
   @override
@@ -145,60 +206,84 @@ class SupabaseAuthRepository implements AuthRepository {
     _currentUser = profile;
     _controller.add(_currentUser);
 
-    if (!SupabaseConfig.isConfigured) return;
+    if (!AppwriteConfig.isConfigured) return;
 
     try {
-      final client = Supabase.instance.client;
-      if (client.auth.currentSession != null) {
-        String formattedTime = profile.reminderTime;
-        if (formattedTime.length == 5) {
-          formattedTime = '$formattedTime:00';
-        }
-
-        await client.from('profiles').upsert({
-          'id': profile.id,
-          'name': profile.name,
-          'goal': profile.goal,
-          'height': profile.height,
-          'current_weight': profile.currentWeight,
-          'target_weight': profile.targetWeight,
-          'preferred_reminder_time': formattedTime,
-          'workout_streak': profile.workoutStreak,
-          'photo_streak': profile.photoStreak,
-          'has_completed_onboarding': profile.hasCompletedOnboarding,
-        });
+      String formattedTime = profile.reminderTime;
+      if (formattedTime.length == 5) {
+        formattedTime = '$formattedTime:00';
       }
-    } catch (e) {
+
+      final data = {
+        'name': profile.name,
+        'goal': profile.goal,
+        'height': profile.height,
+        'current_weight': profile.currentWeight,
+        'target_weight': profile.targetWeight,
+        'preferred_reminder_time': formattedTime,
+        'workout_streak': profile.workoutStreak,
+        'photo_streak': profile.photoStreak,
+        'has_completed_onboarding': profile.hasCompletedOnboarding,
+      };
+
+      try {
+        await AppwriteClient.instance.databases.updateDocument(
+          databaseId: AppwriteConfig.databaseId,
+          collectionId: AppwriteConfig.profilesCollection,
+          documentId: profile.id,
+          data: data,
+        );
+      } on AppwriteException catch (e) {
+        if (e.code == 404) {
+          await AppwriteClient.instance.databases.createDocument(
+            databaseId: AppwriteConfig.databaseId,
+            collectionId: AppwriteConfig.profilesCollection,
+            documentId: profile.id,
+            data: data,
+            permissions: [
+              Permission.read(Role.user(profile.id)),
+              Permission.update(Role.user(profile.id)),
+              Permission.delete(Role.user(profile.id)),
+            ],
+          );
+        }
+      }
+    } catch (_) {
       // Remote sync error caught; local state is preserved
     }
   }
 
   @override
   Future<void> signOut() async {
-    final client = Supabase.instance.client;
-    await client.auth.signOut();
+    try {
+      await AppwriteClient.instance.account.deleteSession(sessionId: 'current');
+    } catch (_) {}
     _currentUser = null;
     _controller.add(null);
   }
 
   @override
   Future<void> deleteAccount() async {
-    final client = Supabase.instance.client;
     if (_currentUser != null) {
-      await client.from('profiles').delete().eq('id', _currentUser!.id);
+      try {
+        await AppwriteClient.instance.databases.deleteDocument(
+          databaseId: AppwriteConfig.databaseId,
+          collectionId: AppwriteConfig.profilesCollection,
+          documentId: _currentUser!.id,
+        );
+      } catch (_) {}
     }
     await signOut();
   }
 
   void dispose() {
-    _authSub?.cancel();
     _controller.close();
   }
 }
 
 // Global Riverpod Providers
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
-  return SupabaseAuthRepository();
+  return AppwriteAuthRepository();
 });
 
 final authStateChangesProvider = StreamProvider<UserProfile?>((ref) {

@@ -1,7 +1,8 @@
 import 'dart:async';
+import 'package:appwrite/appwrite.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:fittrack/core/supabase/supabase_config.dart';
+import 'package:fittrack/core/appwrite/appwrite_client.dart';
+import 'package:fittrack/core/appwrite/appwrite_config.dart';
 import '../domain/measurement.dart';
 
 abstract class MeasurementRepository {
@@ -12,8 +13,8 @@ abstract class MeasurementRepository {
   Future<void> deleteMeasurement(String measurementId);
 }
 
-/// Supabase PostgreSQL implementation for Body Measurements
-class SupabaseMeasurementRepository implements MeasurementRepository {
+/// Appwrite Database implementation for Body Measurements
+class AppwriteMeasurementRepository implements MeasurementRepository {
   final _controller = StreamController<List<BodyMeasurement>>.broadcast();
   List<BodyMeasurement> _cache = [];
 
@@ -44,40 +45,50 @@ class SupabaseMeasurementRepository implements MeasurementRepository {
   @override
   Future<List<BodyMeasurement>> getMeasurements(String userId,
       {String? type}) async {
-    if (!SupabaseConfig.isConfigured) return [];
+    if (!AppwriteConfig.isConfigured) return [];
 
-    final client = Supabase.instance.client;
-    var query = client
-        .from('measurements')
-        .select(
-            'id, user_id, measurement_type, value, unit, recorded_at, notes')
-        .eq('user_id', userId);
+    try {
+      final db = AppwriteClient.instance.databases;
+      final queries = [
+        Query.equal('user_id', userId),
+        Query.orderDesc('recorded_at'),
+        Query.limit(100),
+      ];
 
-    if (type != null) {
-      query = query.eq('measurement_type', type.toLowerCase());
-    }
+      if (type != null) {
+        queries.add(Query.equal('measurement_type', type.toLowerCase()));
+      }
 
-    final response = await query.order('recorded_at', ascending: false);
-    final list = (response as List<dynamic>).map((item) {
-      final rawType = item['measurement_type'] as String? ?? 'weight';
-      final formattedType = rawType.isEmpty
-          ? 'Weight'
-          : rawType[0].toUpperCase() + rawType.substring(1);
-
-      return BodyMeasurement(
-        id: item['id'] as String,
-        userId: item['user_id'] as String,
-        type: formattedType,
-        value: (item['value'] as num).toDouble(),
-        unit: item['unit'] as String? ?? 'kg',
-        recordedAt: DateTime.tryParse(item['recorded_at'] as String? ?? '') ??
-            DateTime.now(),
-        note: item['notes'] as String?,
+      final response = await db.listDocuments(
+        databaseId: AppwriteConfig.databaseId,
+        collectionId: AppwriteConfig.measurementsCollection,
+        queries: queries,
       );
-    }).toList();
 
-    _cache = list;
-    return list;
+      final list = response.documents.map((doc) {
+        final item = doc.data;
+        final rawType = item['measurement_type'] as String? ?? 'weight';
+        final formattedType = rawType.isEmpty
+            ? 'Weight'
+            : rawType[0].toUpperCase() + rawType.substring(1);
+
+        return BodyMeasurement(
+          id: doc.$id,
+          userId: item['user_id'] as String? ?? userId,
+          type: formattedType,
+          value: (item['value'] as num).toDouble(),
+          unit: item['unit'] as String? ?? 'kg',
+          recordedAt: DateTime.tryParse(item['recorded_at'] as String? ?? '') ??
+              DateTime.now(),
+          note: item['notes'] as String?,
+        );
+      }).toList();
+
+      _cache = list;
+      return list;
+    } catch (_) {
+      return _cache;
+    }
   }
 
   @override
@@ -86,38 +97,67 @@ class SupabaseMeasurementRepository implements MeasurementRepository {
     _cache.insert(0, measurement);
     _controller.add(List.unmodifiable(_cache));
 
-    if (!SupabaseConfig.isConfigured) return;
+    if (!AppwriteConfig.isConfigured) return;
 
     try {
-      final client = Supabase.instance.client;
-      if (client.auth.currentSession == null) return;
-      await client.from('measurements').upsert({
-        'id': measurement.id,
+      final db = AppwriteClient.instance.databases;
+      final permissions = [
+        Permission.read(Role.user(measurement.userId)),
+        Permission.update(Role.user(measurement.userId)),
+        Permission.delete(Role.user(measurement.userId)),
+      ];
+
+      final docData = {
         'user_id': measurement.userId,
         'measurement_type': measurement.type.toLowerCase(),
         'value': measurement.value,
         'unit': measurement.unit,
         'recorded_at': measurement.recordedAt.toIso8601String(),
-        'notes': measurement.note,
-      });
+        'notes': measurement.note ?? '',
+      };
+
+      try {
+        await db.updateDocument(
+          databaseId: AppwriteConfig.databaseId,
+          collectionId: AppwriteConfig.measurementsCollection,
+          documentId: measurement.id,
+          data: docData,
+        );
+      } on AppwriteException catch (e) {
+        if (e.code == 404) {
+          await db.createDocument(
+            databaseId: AppwriteConfig.databaseId,
+            collectionId: AppwriteConfig.measurementsCollection,
+            documentId: measurement.id,
+            data: docData,
+            permissions: permissions,
+          );
+        }
+      }
     } catch (_) {}
   }
 
   @override
   Future<void> deleteMeasurement(String measurementId) async {
-    if (!SupabaseConfig.isConfigured) return;
-
-    final client = Supabase.instance.client;
-    await client.from('measurements').delete().eq('id', measurementId);
-
     _cache.removeWhere((m) => m.id == measurementId);
     _controller.add(List.unmodifiable(_cache));
+
+    if (!AppwriteConfig.isConfigured) return;
+
+    try {
+      final db = AppwriteClient.instance.databases;
+      await db.deleteDocument(
+        databaseId: AppwriteConfig.databaseId,
+        collectionId: AppwriteConfig.measurementsCollection,
+        documentId: measurementId,
+      );
+    } catch (_) {}
   }
 }
 
 // Global Riverpod Providers
 final measurementRepositoryProvider = Provider<MeasurementRepository>((ref) {
-  return SupabaseMeasurementRepository();
+  return AppwriteMeasurementRepository();
 });
 
 final weightHistoryStreamProvider =

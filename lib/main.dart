@@ -1,20 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'app/app.dart';
-import 'core/supabase/supabase_config.dart';
+import 'core/appwrite/appwrite_client.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Supabase
-  if (SupabaseConfig.isConfigured) {
-    await Supabase.initialize(
-      url: SupabaseConfig.url,
-      publishableKey: SupabaseConfig.anonKey,
-    );
-  }
+  // Initialize Appwrite Client & Services
+  AppwriteClient.instance.init();
 
   // Set immersive light status and navigation bar styling
   SystemChrome.setSystemUIOverlayStyle(

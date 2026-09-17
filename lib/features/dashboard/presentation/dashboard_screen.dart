@@ -142,15 +142,17 @@ class DashboardScreen extends ConsumerWidget {
                         children: [
                           Text(
                             hasPhotoToday
-                                ? "Photo Uploaded!"
+                                ? "Today's Photo Logged!"
                                 : "Upload your progress photo\nafter workout",
                             style: AppTypography.titleMedium,
                           ),
-                          if (!hasPhotoToday) ...[
-                            const SizedBox(height: 8),
-                            const Text("Keep your streak alive.",
-                                style: AppTypography.bodySmall),
-                          ]
+                          const SizedBox(height: 6),
+                          Text(
+                            hasPhotoToday
+                                ? "Tap camera to add more poses (Side, Back)."
+                                : "Keep your streak alive.",
+                            style: AppTypography.bodySmall,
+                          ),
                         ],
                       ),
                     ),
@@ -315,8 +317,37 @@ class DashboardScreen extends ConsumerWidget {
                     height: 145,
                     child: ListView.builder(
                       scrollDirection: Axis.horizontal,
-                      itemCount: photosList.length,
+                      itemCount: photosList.length + 1,
                       itemBuilder: (context, index) {
+                        if (index == photosList.length) {
+                          return Container(
+                            width: 110,
+                            margin: const EdgeInsets.only(right: 16),
+                            child: GestureDetector(
+                              onTap: () => context.push('/camera'),
+                              child: const NeumorphicContainer(
+                                borderRadius: 16,
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.add_a_photo_outlined,
+                                        color: AppColors.primary, size: 28),
+                                    SizedBox(height: 8),
+                                    Text(
+                                      '+ Add Photo',
+                                      style: TextStyle(
+                                        color: AppColors.primary,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+
                         final photo = photosList[index];
                         return Container(
                           width: 110,
@@ -328,6 +359,7 @@ class DashboardScreen extends ConsumerWidget {
                               'selectedDate': photo.createdAt.toIso8601String(),
                               'dayNumber': photo.effectiveDayNumber,
                               'notes': photo.cleanNotes,
+                              'isViewingExisting': true,
                             }),
                             child: NeumorphicContainer(
                               borderRadius: 16,

@@ -8,6 +8,8 @@ import 'package:fittrack/core/widgets/app_text_field.dart';
 import 'package:fittrack/core/widgets/neumorphic_container.dart';
 import '../../data/auth_repository.dart';
 
+import 'package:appwrite/appwrite.dart';
+import 'package:fittrack/core/appwrite/appwrite_client.dart';
 import 'package:fittrack/core/services/pin_service.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -57,10 +59,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           }
         }
       }
-    } catch (e) {
+    } on AppwriteException catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = e.toString();
+          _errorMessage = AppwriteClient.formatError(e);
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        String msg = e.toString();
+        if (msg.startsWith('Exception: ')) {
+          msg = msg.substring(11);
+        }
+        setState(() {
+          _errorMessage = msg;
         });
       }
     } finally {
@@ -209,7 +221,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMedium,
                   ),
-                  const SizedBox(height: 48),
+                  const SizedBox(height: 32),
                   if (_errorMessage != null) ...[
                     NeumorphicContainer(
                       padding: const EdgeInsets.all(16),
@@ -233,7 +245,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ],
                   AppTextField(
                     label: 'Email Address',
-                    hint: 'athlete@example.com',
+                    hint: 'Enter your email',
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
                     prefixIcon: const Icon(Icons.email_outlined,
@@ -245,7 +257,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   const SizedBox(height: 20),
                   AppTextField(
                     label: 'Password',
-                    hint: '••••••••',
+                    hint: 'Enter your password',
                     controller: _passwordController,
                     isPassword: true,
                     prefixIcon: const Icon(Icons.lock_outline,
@@ -371,7 +383,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 48),
+                  const SizedBox(height: 32),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [

@@ -18,8 +18,6 @@ import '../features/progress_photos/presentation/timeline_screen.dart';
 import '../features/workouts/presentation/new_workout_screen.dart';
 import '../features/workouts/presentation/workout_screen.dart';
 
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../core/supabase/supabase_config.dart';
 import '../core/services/pin_service.dart';
 import '../features/auth/data/auth_repository.dart';
 import '../features/auth/presentation/screens/pin_lock_screen.dart';
@@ -45,9 +43,7 @@ final routerProvider = Provider<GoRouter>((ref) {
     refreshListenable: notifier,
     redirect: (context, state) {
       final authRepo = ref.read(authRepositoryProvider);
-      final hasLocalSession = SupabaseConfig.isConfigured &&
-          Supabase.instance.client.auth.currentSession != null;
-      final isLoggedIn = hasLocalSession || authRepo.currentUser != null;
+      final isLoggedIn = authRepo.currentUser != null;
 
       final pinState = ref.read(pinServiceProvider);
       final currentLoc = state.matchedLocation;
@@ -99,14 +95,21 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/progress/preview',
         builder: (context, state) {
           final extra = state.extra as Map<String, dynamic>?;
+          final dynamic rawPaths = extra?['imagePaths'];
+          List<String>? imagePaths;
+          if (rawPaths is List) {
+            imagePaths = rawPaths.map((e) => e.toString()).toList();
+          }
           return PhotoPreviewScreen(
-            imagePath: extra?['imagePath'] ?? '',
+            imagePaths: imagePaths,
+            imagePath: extra?['imagePath'] as String?,
             initialPose: extra?['pose'] ?? 'Front',
             initialNotes: extra?['notes'],
             initialDate: extra?['selectedDate'] != null
                 ? DateTime.tryParse(extra!['selectedDate'] as String)
                 : null,
             initialDayNumber: extra?['dayNumber'] as int?,
+            isViewingExisting: extra?['isViewingExisting'] as bool? ?? false,
           );
         },
       ),

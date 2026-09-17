@@ -35,7 +35,9 @@ dependencies:
 
   # Icons & Styling
   cupertino_icons: ^1.0.8
-  supabase_flutter: ^2.17.2
+
+  # Backend: Appwrite Flutter SDK
+  appwrite: ^26.2.0
 
 dev_dependencies:
   flutter_test:

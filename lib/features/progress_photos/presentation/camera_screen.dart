@@ -9,6 +9,7 @@ import 'package:fittrack/core/widgets/app_card.dart';
 import 'package:fittrack/core/widgets/app_text_field.dart';
 import 'package:fittrack/core/widgets/neumorphic_container.dart';
 import 'package:fittrack/features/auth/data/auth_repository.dart';
+import '../data/progress_photo_repository.dart';
 
 import 'package:intl/intl.dart';
 
@@ -25,6 +26,26 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
   final _notesController = TextEditingController();
   DateTime _selectedDate = DateTime.now();
   int _selectedDay = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final user = ref.read(currentUserProfileProvider);
+      if (user != null) {
+        final photos =
+            ref.read(progressPhotosStreamProvider(user.id)).value ?? [];
+        if (photos.isNotEmpty) {
+          final maxDay = photos
+              .map((p) => p.effectiveDayNumber)
+              .reduce((a, b) => a > b ? a : b);
+          setState(() {
+            _selectedDay = maxDay + 1;
+          });
+        }
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -59,20 +80,39 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
 
   Future<void> _capture(ImageSource source) async {
     try {
-      final XFile? image = await _picker.pickImage(
-        source: source,
-        maxWidth: 1920,
-        maxHeight: 1920,
-        imageQuality: 88,
-      );
-      if (image != null && mounted) {
-        context.push('/progress/preview', extra: {
-          'imagePath': image.path,
-          'pose': _selectedPose,
-          'notes': _notesController.text,
-          'selectedDate': _selectedDate.toIso8601String(),
-          'dayNumber': _selectedDay,
-        });
+      if (source == ImageSource.gallery) {
+        final List<XFile> images = await _picker.pickMultiImage(
+          maxWidth: 1920,
+          maxHeight: 1920,
+          imageQuality: 88,
+        );
+        if (images.isNotEmpty && mounted) {
+          context.push('/progress/preview', extra: {
+            'imagePaths': images.map((e) => e.path).toList(),
+            'imagePath': images.first.path,
+            'pose': _selectedPose,
+            'notes': _notesController.text,
+            'selectedDate': _selectedDate.toIso8601String(),
+            'dayNumber': _selectedDay,
+          });
+        }
+      } else {
+        final XFile? image = await _picker.pickImage(
+          source: source,
+          maxWidth: 1920,
+          maxHeight: 1920,
+          imageQuality: 88,
+        );
+        if (image != null && mounted) {
+          context.push('/progress/preview', extra: {
+            'imagePaths': [image.path],
+            'imagePath': image.path,
+            'pose': _selectedPose,
+            'notes': _notesController.text,
+            'selectedDate': _selectedDate.toIso8601String(),
+            'dayNumber': _selectedDay,
+          });
+        }
       }
     } catch (e) {
       debugPrint('Image capture error: $e');

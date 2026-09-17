@@ -8,6 +8,9 @@ import 'package:fittrack/core/widgets/app_text_field.dart';
 import 'package:fittrack/core/widgets/neumorphic_container.dart';
 import '../../data/auth_repository.dart';
 
+import 'package:appwrite/appwrite.dart';
+import 'package:fittrack/core/appwrite/appwrite_client.dart';
+
 class RegisterScreen extends ConsumerStatefulWidget {
   const RegisterScreen({super.key});
 
@@ -48,10 +51,20 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       if (mounted) {
         context.go('/onboarding');
       }
-    } catch (e) {
+    } on AppwriteException catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = e.toString();
+          _errorMessage = AppwriteClient.formatError(e);
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        String msg = e.toString();
+        if (msg.startsWith('Exception: ')) {
+          msg = msg.substring(11);
+        }
+        setState(() {
+          _errorMessage = msg;
         });
       }
     } finally {
@@ -96,7 +109,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     'Start tracking your workouts & visual transformation',
                     style: AppTypography.bodyMedium,
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 24),
                   if (_errorMessage != null) ...[
                     NeumorphicContainer(
                       padding: const EdgeInsets.all(16),
@@ -120,7 +133,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   ],
                   AppTextField(
                     label: 'Full Name',
-                    hint: 'Alex Miller',
+                    hint: 'Enter your full name',
                     controller: _nameController,
                     prefixIcon: const Icon(Icons.person_outline,
                         color: AppColors.textMuted, size: 20),
@@ -131,7 +144,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   const SizedBox(height: 18),
                   AppTextField(
                     label: 'Email',
-                    hint: 'athlete@example.com',
+                    hint: 'Enter your email',
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
                     prefixIcon: const Icon(Icons.email_outlined,
@@ -152,7 +165,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         ? 'Password must be at least 6 characters'
                         : null,
                   ),
-                  const SizedBox(height: 48),
+                  const SizedBox(height: 32),
                   AppButton(
                     label: 'Sign Up',
                     isLoading: _isLoading,
