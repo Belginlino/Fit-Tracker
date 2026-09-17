@@ -148,15 +148,84 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
     );
   }
 
+  Future<void> _confirmDeletePhoto(ProgressPhoto photo) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardBackground,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.delete_outline_rounded, color: AppColors.error, size: 24),
+            SizedBox(width: 8),
+            Text('Delete Photo?',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Text(
+          'Delete ${photo.dayLabel} (${photo.pose} pose) photo? It will be permanently removed from cloud storage.',
+          style: AppTypography.bodySmall,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final user = ref.read(currentUserProfileProvider);
+      await ref
+          .read(progressPhotoRepositoryProvider)
+          .deletePhoto(photo.id, userId: user?.id);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Progress photo deleted ✓'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete photo: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
   Widget _buildGridCard(ProgressPhoto photo) {
     return GestureDetector(
       onTap: () => context.push('/progress/preview', extra: {
+        'photoId': photo.id,
         'imagePath': photo.localFilePath ?? photo.downloadUrl ?? '',
         'pose': photo.pose,
         'selectedDate': photo.createdAt.toIso8601String(),
         'dayNumber': photo.effectiveDayNumber,
         'notes': photo.cleanNotes,
+        'isViewingExisting': true,
       }),
+      onLongPress: () => _confirmDeletePhoto(photo),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -205,21 +274,42 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
                     Positioned(
                       top: 8,
                       right: 8,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.55),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          photo.pose,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.55),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              photo.pose,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 4),
+                          GestureDetector(
+                            onTap: () => _confirmDeletePhoto(photo),
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.65),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.delete_outline_rounded,
+                                color: Colors.white,
+                                size: 14,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],

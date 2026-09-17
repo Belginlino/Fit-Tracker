@@ -21,6 +21,7 @@ class PhotoItem {
 }
 
 class PhotoPreviewScreen extends ConsumerStatefulWidget {
+  final String? photoId;
   final String? imagePath;
   final List<String>? imagePaths;
   final String initialPose;
@@ -31,6 +32,7 @@ class PhotoPreviewScreen extends ConsumerStatefulWidget {
 
   const PhotoPreviewScreen({
     super.key,
+    this.photoId,
     this.imagePath,
     this.imagePaths,
     this.initialPose = 'Front',
@@ -53,6 +55,7 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
   late DateTime _selectedDate;
   late int _selectedDay;
   bool _isSaving = false;
+  bool _isDeleting = false;
   final ImagePicker _picker = ImagePicker();
 
   @override
@@ -241,6 +244,94 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
     }
   }
 
+  Future<void> _confirmDeletePhoto() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardBackground,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.delete_outline_rounded, color: AppColors.error, size: 24),
+            SizedBox(width: 8),
+            Text('Delete Photo?',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: const Text(
+          'Are you sure you want to delete this progress photo? It will be permanently removed from your progress history and cloud storage.',
+          style: AppTypography.bodySmall,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isDeleting = true);
+
+    try {
+      final user = ref.read(currentUserProfileProvider);
+      final repo = ref.read(progressPhotoRepositoryProvider);
+
+      String? idToDelete = widget.photoId;
+      if (idToDelete == null || idToDelete.isEmpty) {
+        final path = _currentPhoto?.path ?? widget.imagePath ?? '';
+        final match =
+            RegExp(r'/files/([^/]+)/(?:view|preview)').firstMatch(path);
+        if (match != null) {
+          idToDelete = match.group(1);
+        } else if (path.contains('photo-')) {
+          final pMatch = RegExp(r'(photo-\d+)').firstMatch(path);
+          idToDelete = pMatch?.group(1);
+        } else if (!path.contains('/') && path.isNotEmpty) {
+          idToDelete = path;
+        }
+      }
+
+      if (idToDelete != null && idToDelete.isNotEmpty) {
+        await repo.deletePhoto(idToDelete, userId: user?.id);
+      }
+
+      if (mounted) {
+        setState(() => _isDeleting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Progress photo deleted ✓'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        context.pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isDeleting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete photo: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final current = _currentPhoto;
@@ -270,6 +361,19 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
                       color: AppColors.primary),
                   tooltip: 'Add More Photos',
                   onPressed: _addMorePhotos,
+                ),
+              ),
+            ),
+          if (widget.isViewingExisting)
+            Padding(
+              padding: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
+              child: NeumorphicContainer(
+                borderRadius: 12,
+                child: IconButton(
+                  icon: const Icon(Icons.delete_outline_rounded,
+                      color: AppColors.error),
+                  tooltip: 'Delete Photo',
+                  onPressed: _isDeleting ? null : _confirmDeletePhoto,
                 ),
               ),
             ),
@@ -627,6 +731,16 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
                 isLoading: _isSaving,
                 onPressed: _photos.isNotEmpty ? _savePhotos : null,
               ),
+              if (widget.isViewingExisting) ...[
+                const SizedBox(height: 14),
+                AppButton(
+                  label: 'Delete Photo',
+                  type: AppButtonType.danger,
+                  icon: Icons.delete_outline_rounded,
+                  isLoading: _isDeleting,
+                  onPressed: _isDeleting ? null : _confirmDeletePhoto,
+                ),
+              ],
             ],
           ),
         ),

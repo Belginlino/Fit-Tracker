@@ -354,6 +354,7 @@ class DashboardScreen extends ConsumerWidget {
                           margin: const EdgeInsets.only(right: 16),
                           child: GestureDetector(
                             onTap: () => context.push('/progress/preview', extra: {
+                              'photoId': photo.id,
                               'imagePath': photo.localFilePath ?? photo.downloadUrl ?? '',
                               'pose': photo.pose,
                               'selectedDate': photo.createdAt.toIso8601String(),

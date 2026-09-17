@@ -101,6 +101,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             imagePaths = rawPaths.map((e) => e.toString()).toList();
           }
           return PhotoPreviewScreen(
+            photoId: extra?['photoId'] as String?,
             imagePaths: imagePaths,
             imagePath: extra?['imagePath'] as String?,
             initialPose: extra?['pose'] ?? 'Front',

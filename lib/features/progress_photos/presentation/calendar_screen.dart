@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:fittrack/app/theme/app_colors.dart';
 import 'package:fittrack/app/theme/app_typography.dart';
 import 'package:fittrack/core/utils/date_formatter.dart';
@@ -290,43 +291,126 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               )),
           if (dayWorkouts.isNotEmpty && dayPhotos.isNotEmpty)
             const Divider(height: 24),
-          ...dayPhotos.map((p) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.15),
-                        shape: BoxShape.circle,
+          ...dayPhotos.map((p) => InkWell(
+                onTap: () => context.push('/progress/preview', extra: {
+                  'photoId': p.id,
+                  'imagePath': p.localFilePath ?? p.downloadUrl ?? '',
+                  'pose': p.pose,
+                  'selectedDate': p.createdAt.toIso8601String(),
+                  'dayNumber': p.effectiveDayNumber,
+                  'notes': p.cleanNotes,
+                  'isViewingExisting': true,
+                }),
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.photo_camera_rounded,
+                            color: AppColors.primary, size: 20),
                       ),
-                      child: const Icon(Icons.photo_camera_rounded,
-                          color: AppColors.primary, size: 20),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('${p.pose} Pose Photo',
-                              style: AppTypography.titleMedium),
-                          Text(
-                            p.weightAtCapture != null
-                                ? 'Weight: ${p.weightAtCapture!.toStringAsFixed(1)} kg'
-                                : 'Progress photo captured',
-                            style: AppTypography.bodySmall,
-                          ),
-                        ],
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('${p.pose} Pose Photo',
+                                style: AppTypography.titleMedium),
+                            Text(
+                              p.weightAtCapture != null
+                                  ? 'Weight: ${p.weightAtCapture!.toStringAsFixed(1)} kg'
+                                  : 'Progress photo captured',
+                              style: AppTypography.bodySmall,
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    const Icon(Icons.check_circle_rounded,
-                        color: AppColors.primary, size: 20),
-                  ],
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline_rounded,
+                            color: AppColors.error, size: 20),
+                        tooltip: 'Delete Photo',
+                        onPressed: () => _confirmDeletePhoto(p),
+                      ),
+                    ],
+                  ),
                 ),
               )),
         ],
       ),
     );
+  }
+
+  Future<void> _confirmDeletePhoto(ProgressPhoto photo) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardBackground,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.delete_outline_rounded, color: AppColors.error, size: 24),
+            SizedBox(width: 8),
+            Text('Delete Photo?',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Text(
+          'Delete ${photo.dayLabel} (${photo.pose} pose) photo? It will be permanently removed.',
+          style: AppTypography.bodySmall,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final user = ref.read(currentUserProfileProvider);
+      await ref
+          .read(progressPhotoRepositoryProvider)
+          .deletePhoto(photo.id, userId: user?.id);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Progress photo deleted ✓'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete photo: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildLegendItem({required Color color, required String label}) {
