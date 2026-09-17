@@ -8,7 +8,8 @@ abstract class AuthRepository {
   Stream<UserProfile?> authStateChanges();
   UserProfile? get currentUser;
   Future<UserProfile> signInWithEmail(String email, String password);
-  Future<UserProfile> registerWithEmail(String email, String password, String name);
+  Future<UserProfile> registerWithEmail(
+      String email, String password, String name);
   Future<void> sendPasswordReset(String email);
   Future<void> updateProfile(UserProfile profile);
   Future<void> signOut();
@@ -57,11 +58,8 @@ class SupabaseAuthRepository implements AuthRepository {
   Future<void> _fetchProfile(String userId, String? email) async {
     try {
       final client = Supabase.instance.client;
-      final response = await client
-          .from('profiles')
-          .select()
-          .eq('id', userId)
-          .maybeSingle();
+      final response =
+          await client.from('profiles').select().eq('id', userId).maybeSingle();
 
       if (response != null) {
         final map = Map<String, dynamic>.from(response);
@@ -109,7 +107,8 @@ class SupabaseAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<UserProfile> registerWithEmail(String email, String password, String name) async {
+  Future<UserProfile> registerWithEmail(
+      String email, String password, String name) async {
     final client = Supabase.instance.client;
     final res = await client.auth.signUp(
       email: email.trim(),
@@ -143,26 +142,35 @@ class SupabaseAuthRepository implements AuthRepository {
 
   @override
   Future<void> updateProfile(UserProfile profile) async {
-    final client = Supabase.instance.client;
-    String formattedTime = profile.reminderTime;
-    if (formattedTime.length == 5) {
-      formattedTime = '$formattedTime:00';
-    }
-
-    await client.from('profiles').upsert({
-      'id': profile.id,
-      'name': profile.name,
-      'goal': profile.goal,
-      'height': profile.height,
-      'current_weight': profile.currentWeight,
-      'target_weight': profile.targetWeight,
-      'preferred_reminder_time': formattedTime,
-      'workout_streak': profile.workoutStreak,
-      'photo_streak': profile.photoStreak,
-      'has_completed_onboarding': profile.hasCompletedOnboarding,
-    });
     _currentUser = profile;
     _controller.add(_currentUser);
+
+    if (!SupabaseConfig.isConfigured) return;
+
+    try {
+      final client = Supabase.instance.client;
+      if (client.auth.currentSession != null) {
+        String formattedTime = profile.reminderTime;
+        if (formattedTime.length == 5) {
+          formattedTime = '$formattedTime:00';
+        }
+
+        await client.from('profiles').upsert({
+          'id': profile.id,
+          'name': profile.name,
+          'goal': profile.goal,
+          'height': profile.height,
+          'current_weight': profile.currentWeight,
+          'target_weight': profile.targetWeight,
+          'preferred_reminder_time': formattedTime,
+          'workout_streak': profile.workoutStreak,
+          'photo_streak': profile.photoStreak,
+          'has_completed_onboarding': profile.hasCompletedOnboarding,
+        });
+      }
+    } catch (e) {
+      // Remote sync error caught; local state is preserved
+    }
   }
 
   @override

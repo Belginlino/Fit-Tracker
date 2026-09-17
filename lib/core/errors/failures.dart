@@ -23,5 +23,6 @@ class ValidationFailure extends Failure {
 }
 
 class NetworkFailure extends Failure {
-  const NetworkFailure([super.message = 'Network connection lost. Please check your internet.']);
+  const NetworkFailure(
+      [super.message = 'Network connection lost. Please check your internet.']);
 }

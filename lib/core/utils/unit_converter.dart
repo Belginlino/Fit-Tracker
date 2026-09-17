@@ -1,4 +1,5 @@
 enum WeightUnit { kg, lbs }
+
 enum DistanceUnit { cm, inches }
 
 class UnitConverter {
@@ -15,7 +16,8 @@ class UnitConverter {
   static double cmToInches(double cm) => cm * cmToInchesFactor;
   static double inchesToCm(double inches) => inches / cmToInchesFactor;
 
-  static String formatWeight(double weightInKg, {WeightUnit unit = WeightUnit.kg, int precision = 1}) {
+  static String formatWeight(double weightInKg,
+      {WeightUnit unit = WeightUnit.kg, int precision = 1}) {
     if (unit == WeightUnit.lbs) {
       final val = kgToLbs(weightInKg);
       return '${val.toStringAsFixed(precision)} lbs';
@@ -23,7 +25,8 @@ class UnitConverter {
     return '${weightInKg.toStringAsFixed(precision)} kg';
   }
 
-  static String formatMeasurement(double valueInCm, {DistanceUnit unit = DistanceUnit.cm, int precision = 1}) {
+  static String formatMeasurement(double valueInCm,
+      {DistanceUnit unit = DistanceUnit.cm, int precision = 1}) {
     if (unit == DistanceUnit.inches) {
       final val = cmToInches(valueInCm);
       return '${val.toStringAsFixed(precision)} in';

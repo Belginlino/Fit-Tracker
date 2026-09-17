@@ -5,6 +5,7 @@ import 'package:fittrack/app/theme/app_colors.dart';
 import 'package:fittrack/app/theme/app_typography.dart';
 import 'package:fittrack/core/widgets/app_button.dart';
 import 'package:fittrack/core/widgets/app_card.dart';
+import 'package:fittrack/core/widgets/neumorphic_container.dart';
 import 'package:fittrack/features/auth/data/auth_repository.dart';
 import '../data/workout_repository.dart';
 import '../domain/workout.dart';
@@ -26,7 +27,8 @@ class _NewWorkoutScreenState extends ConsumerState<NewWorkoutScreen> {
   @override
   void initState() {
     super.initState();
-    _titleController = TextEditingController(text: widget.templateTitle ?? 'Chest + Triceps');
+    _titleController =
+        TextEditingController(text: widget.templateTitle ?? 'Chest + Triceps');
     _initializeDefaultExercises();
   }
 
@@ -70,7 +72,8 @@ class _NewWorkoutScreenState extends ConsumerState<NewWorkoutScreen> {
   void _addSet(int exerciseIndex) {
     setState(() {
       final currentSets = _exercises[exerciseIndex].sets;
-      final lastWeight = currentSets.isNotEmpty ? currentSets.last.weight : 20.0;
+      final lastWeight =
+          currentSets.isNotEmpty ? currentSets.last.weight : 20.0;
       final lastReps = currentSets.isNotEmpty ? currentSets.last.reps : 10;
       final newSet = WorkoutSet(
         setNumber: currentSets.length + 1,
@@ -88,8 +91,10 @@ class _NewWorkoutScreenState extends ConsumerState<NewWorkoutScreen> {
       final currentSets = List<WorkoutSet>.from(_exercises[exerciseIndex].sets);
       final currentWeight = currentSets[setIndex].weight;
       final updatedWeight = (currentWeight + delta).clamp(0.0, 500.0);
-      currentSets[setIndex] = currentSets[setIndex].copyWith(weight: updatedWeight);
-      _exercises[exerciseIndex] = _exercises[exerciseIndex].copyWith(sets: currentSets);
+      currentSets[setIndex] =
+          currentSets[setIndex].copyWith(weight: updatedWeight);
+      _exercises[exerciseIndex] =
+          _exercises[exerciseIndex].copyWith(sets: currentSets);
     });
   }
 
@@ -99,7 +104,8 @@ class _NewWorkoutScreenState extends ConsumerState<NewWorkoutScreen> {
       final currentReps = currentSets[setIndex].reps;
       final updatedReps = (currentReps + delta).clamp(1, 100);
       currentSets[setIndex] = currentSets[setIndex].copyWith(reps: updatedReps);
-      _exercises[exerciseIndex] = _exercises[exerciseIndex].copyWith(sets: currentSets);
+      _exercises[exerciseIndex] =
+          _exercises[exerciseIndex].copyWith(sets: currentSets);
     });
   }
 
@@ -111,8 +117,10 @@ class _NewWorkoutScreenState extends ConsumerState<NewWorkoutScreen> {
 
     final workout = Workout(
       id: 'workout-${DateTime.now().millisecondsSinceEpoch}',
-      userId: user?.id ?? 'demo-user-101',
-      title: _titleController.text.trim().isNotEmpty ? _titleController.text.trim() : 'Workout',
+      userId: user?.id ?? 'athlete-user',
+      title: _titleController.text.trim().isNotEmpty
+          ? _titleController.text.trim()
+          : 'Workout',
       date: DateTime.now(),
       durationMinutes: 45,
       exercises: _exercises,
@@ -152,15 +160,16 @@ class _NewWorkoutScreenState extends ConsumerState<NewWorkoutScreen> {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.15),
+                    color: AppColors.primary.withValues(alpha: 0.15),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.celebration_rounded, color: AppColors.primary, size: 36),
+                  child: const Icon(Icons.celebration_rounded,
+                      color: AppColors.primary, size: 36),
                 ),
                 const SizedBox(height: 16),
-                Text('Great Workout!', style: AppTypography.displayMedium),
+                const Text('Great Workout!', style: AppTypography.displayMedium),
                 const SizedBox(height: 8),
-                Text(
+                const Text(
                   'Record today’s post-workout progress photo while you have a great pump.',
                   textAlign: TextAlign.center,
                   style: AppTypography.bodyMedium,
@@ -211,7 +220,8 @@ class _NewWorkoutScreenState extends ConsumerState<NewWorkoutScreen> {
             onPressed: _isSaving ? null : _finishWorkout,
             child: Text(
               'Finish',
-              style: AppTypography.labelLarge.copyWith(color: AppColors.primary),
+              style:
+                  AppTypography.labelLarge.copyWith(color: AppColors.primary),
             ),
           ),
         ],
@@ -251,7 +261,8 @@ class _NewWorkoutScreenState extends ConsumerState<NewWorkoutScreen> {
               children: [
                 Text(exercise.name, style: AppTypography.titleMedium),
                 IconButton(
-                  icon: const Icon(Icons.delete_outline_rounded, size: 20, color: AppColors.textMuted),
+                  icon: const Icon(Icons.delete_outline_rounded,
+                      size: 20, color: AppColors.textMuted),
                   onPressed: () {
                     setState(() => _exercises.removeAt(exIndex));
                   },
@@ -261,17 +272,21 @@ class _NewWorkoutScreenState extends ConsumerState<NewWorkoutScreen> {
             const SizedBox(height: 12),
 
             // Sets Header
-            Row(
+            const Row(
               children: [
                 SizedBox(
                   width: 36,
                   child: Text('SET', style: AppTypography.bodySmall),
                 ),
                 Expanded(
-                  child: Text('WEIGHT (KG)', textAlign: TextAlign.center, style: AppTypography.bodySmall),
+                  child: Text('WEIGHT (KG)',
+                      textAlign: TextAlign.center,
+                      style: AppTypography.bodySmall),
                 ),
                 Expanded(
-                  child: Text('REPS', textAlign: TextAlign.center, style: AppTypography.bodySmall),
+                  child: Text('REPS',
+                      textAlign: TextAlign.center,
+                      style: AppTypography.bodySmall),
                 ),
               ],
             ),
@@ -287,7 +302,8 @@ class _NewWorkoutScreenState extends ConsumerState<NewWorkoutScreen> {
                   children: [
                     SizedBox(
                       width: 36,
-                      child: Text('${set.setNumber}', style: AppTypography.labelMedium),
+                      child: Text('${set.setNumber}',
+                          style: AppTypography.labelMedium),
                     ),
 
                     // Weight stepper
@@ -296,13 +312,24 @@ class _NewWorkoutScreenState extends ConsumerState<NewWorkoutScreen> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           IconButton(
-                            icon: const Icon(Icons.remove_circle_outline, size: 20, color: AppColors.textMuted),
-                            onPressed: () => _updateSetWeight(exIndex, setIndex, -2.5),
+                            icon: const Icon(Icons.remove_circle_outline,
+                                size: 20, color: AppColors.textMuted),
+                            onPressed: () =>
+                                _updateSetWeight(exIndex, setIndex, -2.5),
                           ),
-                          Text('${set.weight}', style: AppTypography.bodyLarge),
+                          NeumorphicContainer(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
+                            style: NeumorphicStyle.inset,
+                            borderRadius: 8,
+                            child: Text('${set.weight}',
+                                style: AppTypography.bodyLarge),
+                          ),
                           IconButton(
-                            icon: const Icon(Icons.add_circle_outline, size: 20, color: AppColors.primary),
-                            onPressed: () => _updateSetWeight(exIndex, setIndex, 2.5),
+                            icon: const Icon(Icons.add_circle_outline,
+                                size: 20, color: AppColors.primary),
+                            onPressed: () =>
+                                _updateSetWeight(exIndex, setIndex, 2.5),
                           ),
                         ],
                       ),
@@ -314,13 +341,24 @@ class _NewWorkoutScreenState extends ConsumerState<NewWorkoutScreen> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           IconButton(
-                            icon: const Icon(Icons.remove_circle_outline, size: 20, color: AppColors.textMuted),
-                            onPressed: () => _updateSetReps(exIndex, setIndex, -1),
+                            icon: const Icon(Icons.remove_circle_outline,
+                                size: 20, color: AppColors.textMuted),
+                            onPressed: () =>
+                                _updateSetReps(exIndex, setIndex, -1),
                           ),
-                          Text('${set.reps}', style: AppTypography.bodyLarge),
+                          NeumorphicContainer(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 8),
+                            style: NeumorphicStyle.inset,
+                            borderRadius: 8,
+                            child: Text('${set.reps}',
+                                style: AppTypography.bodyLarge),
+                          ),
                           IconButton(
-                            icon: const Icon(Icons.add_circle_outline, size: 20, color: AppColors.primary),
-                            onPressed: () => _updateSetReps(exIndex, setIndex, 1),
+                            icon: const Icon(Icons.add_circle_outline,
+                                size: 20, color: AppColors.primary),
+                            onPressed: () =>
+                                _updateSetReps(exIndex, setIndex, 1),
                           ),
                         ],
                       ),
@@ -336,7 +374,8 @@ class _NewWorkoutScreenState extends ConsumerState<NewWorkoutScreen> {
               alignment: Alignment.centerLeft,
               child: TextButton.icon(
                 icon: const Icon(Icons.add, size: 16, color: AppColors.primary),
-                label: Text('Add Set', style: TextStyle(fontSize: 13, color: AppColors.primary)),
+                label: const Text('Add Set',
+                    style: TextStyle(fontSize: 13, color: AppColors.primary)),
                 onPressed: () => _addSet(exIndex),
               ),
             ),

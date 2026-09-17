@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fittrack/app/theme/app_colors.dart';
 import 'package:fittrack/app/theme/app_typography.dart';
 import 'package:fittrack/core/widgets/app_card.dart';
+import 'package:fittrack/core/widgets/neumorphic_container.dart';
 import 'package:fittrack/features/auth/data/auth_repository.dart';
 import 'package:fittrack/features/workouts/data/workout_repository.dart';
 
@@ -21,42 +22,63 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProfileProvider);
-    final prsAsync = ref.watch(personalRecordsProvider(user?.id ?? 'demo-user-101'));
+    final userId = user?.id ?? 'athlete-user';
+    final prsAsync = ref.watch(personalRecordsProvider(userId));
+    final workoutsAsync = ref.watch(workoutsStreamProvider(userId));
+
+    final workoutStreak = user?.workoutStreak ?? 0;
+    final photoStreak = user?.photoStreak ?? 0;
+    final totalDays = workoutStreak + photoStreak;
+    final score = (totalDays * 10).clamp(0, 100);
+    final tier =
+        score >= 80 ? 'Elite' : (score >= 40 ? 'Consistent' : 'Building');
+
+    final workouts = workoutsAsync.value ?? [];
+    double totalVol = 0;
+    for (final w in workouts) {
+      for (final ex in w.exercises) {
+        for (final s in ex.sets) {
+          totalVol += (s.weight * s.reps);
+        }
+      }
+    }
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Analytics & Records'),
+        centerTitle: true,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Time Range Filter Bar (Section 21)
+            // Time Range Filter Bar
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
+              clipBehavior: Clip.none,
               child: Row(
                 children: _ranges.map((range) {
                   final isSelected = _selectedRange == range;
                   return Padding(
-                    padding: const EdgeInsets.only(right: 8),
+                    padding: const EdgeInsets.only(right: 12),
                     child: GestureDetector(
                       onTap: () => setState(() => _selectedRange = range),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: isSelected ? AppColors.primary : AppColors.card,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: isSelected ? AppColors.primary : AppColors.divider,
-                          ),
-                        ),
+                      child: NeumorphicContainer(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
+                        borderRadius: 20,
+                        style: isSelected
+                            ? NeumorphicStyle.inset
+                            : NeumorphicStyle.raised,
                         child: Text(
                           range,
                           style: TextStyle(
-                            fontSize: 12,
+                            fontSize: 13,
                             fontWeight: FontWeight.w700,
-                            color: isSelected ? Colors.black : AppColors.textSecondary,
+                            color: isSelected
+                                ? AppColors.primary
+                                : AppColors.textPrimary,
                           ),
                         ),
                       ),
@@ -65,27 +87,31 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                 }).toList(),
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 32),
 
-            // Consistency Score Card (Section 22)
-            AppCard(
-              gradient: AppColors.cardGradient,
+            // Consistency Score Card
+            NeumorphicContainer(
+              padding: const EdgeInsets.all(24),
+              borderRadius: 24,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('CONSISTENCY SCORE', style: AppTypography.labelLarge.copyWith(letterSpacing: 1.0)),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: AppColors.accentLime.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Text(
-                          'Top 10%',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.accentLime),
+                      const Text('CONSISTENCY SCORE',
+                          style: AppTypography.labelMedium),
+                      NeumorphicContainer(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        style: NeumorphicStyle.inset,
+                        borderRadius: 12,
+                        child: Text(
+                          tier,
+                          style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.primary),
                         ),
                       ),
                     ],
@@ -95,111 +121,150 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.baseline,
                     textBaseline: TextBaseline.alphabetic,
                     children: [
-                      Text('88', style: AppTypography.displayLarge.copyWith(color: AppColors.accentLime)),
-                      Text(' / 100', style: AppTypography.titleMedium.copyWith(color: AppColors.textMuted)),
+                      Text('$score',
+                          style: AppTypography.displayLarge
+                              .copyWith(color: AppColors.primary)),
+                      Text(' / 100',
+                          style: AppTypography.titleMedium
+                              .copyWith(color: AppColors.textMuted)),
                     ],
                   ),
+                  const SizedBox(height: 24),
+                  _buildScoreBar('Workout Consistency',
+                      (workoutStreak / 7).clamp(0.0, 1.0), AppColors.primary),
+                  const SizedBox(height: 12),
+                  _buildScoreBar('Photo Consistency',
+                      (photoStreak / 7).clamp(0.0, 1.0), AppColors.primary),
+                  const SizedBox(height: 12),
+                  _buildScoreBar('Account Activity',
+                      (score / 100).clamp(0.0, 1.0), AppColors.primary),
                   const SizedBox(height: 16),
-                  _buildScoreBar('Workout Consistency', 0.92, AppColors.accentOrange),
-                  const SizedBox(height: 8),
-                  _buildScoreBar('Photo Consistency', 0.85, AppColors.primary),
-                  const SizedBox(height: 8),
-                  _buildScoreBar('Weigh-In Regularity', 0.88, AppColors.accentLime),
-                  const SizedBox(height: 14),
-                  Text(
-                    '* Motivational consistency index based on weekly activity regularity. Not a medical metric.',
+                  const Text(
+                    '* Motivational consistency index calculated from real workout and photo check-in streaks.',
                     style: AppTypography.bodySmall,
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 32),
 
             // Weekly Volume Progression Chart
+            const Text('Training Volume (kg lifted)',
+                style: AppTypography.labelLarge),
+            const SizedBox(height: 16),
             AppCard(
+              padding: const EdgeInsets.all(24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Training Volume (kg lifted)', style: AppTypography.titleMedium),
-                  const SizedBox(height: 4),
-                  Text('Rolling progression across weeks', style: AppTypography.bodySmall),
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    height: 180,
-                    child: BarChart(
-                      BarChartData(
-                        gridData: const FlGridData(show: false),
-                        borderData: FlBorderData(show: false),
-                        titlesData: FlTitlesData(
-                          leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                          bottomTitles: AxisTitles(
-                            sideTitles: SideTitles(
-                              showTitles: true,
-                              getTitlesWidget: (val, meta) {
-                                switch (val.toInt()) {
-                                  case 0:
-                                    return const Text('W1', style: TextStyle(color: AppColors.textMuted, fontSize: 11));
-                                  case 1:
-                                    return const Text('W2', style: TextStyle(color: AppColors.textMuted, fontSize: 11));
-                                  case 2:
-                                    return const Text('W3', style: TextStyle(color: AppColors.textMuted, fontSize: 11));
-                                  case 3:
-                                    return const Text('W4', style: TextStyle(color: AppColors.textMuted, fontSize: 11));
-                                }
-                                return const SizedBox.shrink();
-                              },
-                            ),
-                          ),
-                        ),
-                        barGroups: [
-                          _makeBarGroup(0, 12400, AppColors.surface),
-                          _makeBarGroup(1, 14200, AppColors.surface),
-                          _makeBarGroup(2, 16800, AppColors.surface),
-                          _makeBarGroup(3, 18500, AppColors.primary),
+                  const Text('Total volume recorded across sessions',
+                      style: AppTypography.bodySmall),
+                  const SizedBox(height: 20),
+                  if (workouts.isEmpty)
+                    Container(
+                      height: 120,
+                      alignment: Alignment.center,
+                      child: const Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.fitness_center_rounded,
+                              size: 32, color: AppColors.textMuted),
+                          SizedBox(height: 8),
+                          Text('No completed workout sessions yet',
+                              style: AppTypography.bodyMedium),
+                          SizedBox(height: 4),
+                          Text(
+                              'Log your first workout to see training volume statistics',
+                              style: AppTypography.bodySmall),
                         ],
                       ),
+                    )
+                  else
+                    SizedBox(
+                      height: 180,
+                      child: BarChart(
+                        BarChartData(
+                          gridData: FlGridData(
+                            show: true,
+                            drawVerticalLine: false,
+                            getDrawingHorizontalLine: (val) => const FlLine(
+                              color: AppColors.border,
+                              strokeWidth: 1,
+                            ),
+                          ),
+                          borderData: FlBorderData(show: false),
+                          titlesData: FlTitlesData(
+                            leftTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                reservedSize: 40,
+                                getTitlesWidget: (val, meta) => Text(
+                                  val.toInt().toString(),
+                                  style: const TextStyle(
+                                      color: AppColors.textMuted, fontSize: 10),
+                                ),
+                              ),
+                            ),
+                            rightTitles: const AxisTitles(
+                                sideTitles: SideTitles(showTitles: false)),
+                            topTitles: const AxisTitles(
+                                sideTitles: SideTitles(showTitles: false)),
+                            bottomTitles: const AxisTitles(
+                                sideTitles: SideTitles(showTitles: false)),
+                          ),
+                          barGroups: [
+                            _makeBarGroup(0, totalVol > 0 ? totalVol : 100,
+                                AppColors.primary),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 32),
 
-            // Personal Records (Section 20)
-            Text('Personal Records (PRs)', style: AppTypography.titleMedium),
-            const SizedBox(height: 12),
+            // Personal Records
+            const Text('Personal Records (PRs)', style: AppTypography.labelLarge),
+            const SizedBox(height: 16),
             prsAsync.when(
               data: (prs) {
                 if (prs.isEmpty) {
-                  return AppCard(
-                    child: Text('Complete a workout to record strength PRs!', style: AppTypography.bodyMedium),
+                  return const AppCard(
+                    padding: EdgeInsets.all(20),
+                    child: Text('Complete a workout to record strength PRs!',
+                        style: AppTypography.bodyMedium),
                   );
                 }
 
                 return Column(
                   children: prs.entries.map((entry) {
                     return Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.only(bottom: 12),
                       child: AppCard(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 16),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Row(
                               children: [
-                                const Icon(Icons.emoji_events_rounded, color: AppColors.accentAmber, size: 22),
-                                const SizedBox(width: 12),
-                                Text(entry.key, style: AppTypography.bodyLarge.copyWith(fontWeight: FontWeight.w600)),
+                                const NeumorphicContainer(
+                                  shape: BoxShape.circle,
+                                  padding: EdgeInsets.all(10),
+                                  child: Icon(Icons.emoji_events_rounded,
+                                      color: AppColors.primary, size: 20),
+                                ),
+                                const SizedBox(width: 16),
+                                Text(entry.key,
+                                    style: AppTypography.titleMedium),
                               ],
                             ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: AppColors.primary.withOpacity(0.12),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
+                            NeumorphicContainer(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 6),
+                              style: NeumorphicStyle.inset,
+                              borderRadius: 10,
                               child: Text(
                                 '${entry.value} kg',
                                 style: const TextStyle(
@@ -219,6 +284,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Center(child: Text('Error: $e')),
             ),
+            const SizedBox(height: 40),
           ],
         ),
       ),
@@ -236,14 +302,19 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
             Text('${(ratio * 100).toInt()}%', style: AppTypography.labelMedium),
           ],
         ),
-        const SizedBox(height: 4),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: LinearProgressIndicator(
-            value: ratio,
-            backgroundColor: AppColors.surface,
-            valueColor: AlwaysStoppedAnimation<Color>(color),
-            minHeight: 6,
+        const SizedBox(height: 8),
+        NeumorphicContainer(
+          borderRadius: 8,
+          style: NeumorphicStyle.inset,
+          padding: EdgeInsets.zero,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: LinearProgressIndicator(
+              value: ratio,
+              backgroundColor: Colors.transparent,
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+              minHeight: 8,
+            ),
           ),
         ),
       ],
@@ -256,8 +327,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       barRods: [
         BarChartRodData(
           toY: y,
-          color: color == AppColors.primary ? AppColors.primary : AppColors.cardElevated,
-          width: 28,
+          color: color,
+          width: 32,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
         ),
       ],

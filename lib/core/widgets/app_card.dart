@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../app/theme/app_colors.dart';
+import 'neumorphic_container.dart';
 
 class AppCard extends StatelessWidget {
   final Widget child;
@@ -9,42 +9,37 @@ class AppCard extends StatelessWidget {
   final Color? color;
   final Border? border;
   final double borderRadius;
-  final Gradient? gradient;
+  final Gradient?
+      gradient; // Keeping for compatibility but we will rely on NeumorphicContainer
+  final NeumorphicStyle style;
 
   const AppCard({
     super.key,
     required this.child,
-    this.padding = const EdgeInsets.all(16),
+    this.padding = const EdgeInsets.all(
+        20), // Increased default padding for more whitespace
     this.margin,
     this.onTap,
     this.color,
     this.border,
     this.borderRadius = 16,
     this.gradient,
+    this.style = NeumorphicStyle.raised,
   });
 
   @override
   Widget build(BuildContext context) {
-    Widget content = Container(
+    Widget content = NeumorphicContainer(
       padding: padding,
-      decoration: BoxDecoration(
-        color: gradient == null ? (color ?? AppColors.card) : null,
-        gradient: gradient,
-        borderRadius: BorderRadius.circular(borderRadius),
-        border: border ?? Border.all(color: AppColors.divider, width: 1),
-      ),
+      style: style,
+      borderRadius: borderRadius,
       child: child,
     );
 
     if (onTap != null) {
-      content = Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(borderRadius),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(borderRadius),
-          child: content,
-        ),
+      content = GestureDetector(
+        onTap: onTap,
+        child: content,
       );
     }
 

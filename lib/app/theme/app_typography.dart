@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'app_colors.dart';
 
 /// Centralized typographic scale for FitTrack.
+/// Built for a clean, premium sans-serif aesthetic.
 class AppTypography {
   AppTypography._();
 
@@ -14,7 +15,7 @@ class AppTypography {
   );
 
   static const TextStyle displayMedium = TextStyle(
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: FontWeight.w700,
     letterSpacing: -0.3,
     color: AppColors.textPrimary,
@@ -22,7 +23,7 @@ class AppTypography {
   );
 
   static const TextStyle titleLarge = TextStyle(
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: FontWeight.w700,
     letterSpacing: -0.2,
     color: AppColors.textPrimary,
@@ -30,14 +31,14 @@ class AppTypography {
   );
 
   static const TextStyle titleMedium = TextStyle(
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: FontWeight.w600,
     color: AppColors.textPrimary,
     height: 1.35,
   );
 
   static const TextStyle bodyLarge = TextStyle(
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: FontWeight.w400,
     color: AppColors.textPrimary,
     height: 1.45,
@@ -75,7 +76,7 @@ class AppTypography {
     fontSize: 28,
     fontWeight: FontWeight.w800,
     letterSpacing: -0.5,
-    color: AppColors.textPrimary,
+    color: AppColors.primary, // Using primary teal for stats
     fontFeatures: [FontFeature.tabularFigures()],
   );
 }

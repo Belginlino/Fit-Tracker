@@ -51,13 +51,13 @@ class SupabaseWorkoutRepository implements WorkoutRepository {
 
     for (final item in data) {
       final exercisesData = (item['workout_exercises'] as List<dynamic>?) ?? [];
-      exercisesData.sort((a, b) =>
-          ((a['exercise_order'] as num?) ?? 0).compareTo((b['exercise_order'] as num?) ?? 0));
+      exercisesData.sort((a, b) => ((a['exercise_order'] as num?) ?? 0)
+          .compareTo((b['exercise_order'] as num?) ?? 0));
 
       final exercises = exercisesData.map((exJson) {
         final setsData = (exJson['workout_sets'] as List<dynamic>?) ?? [];
-        setsData.sort((a, b) =>
-            ((a['set_number'] as num?) ?? 0).compareTo((b['set_number'] as num?) ?? 0));
+        setsData.sort((a, b) => ((a['set_number'] as num?) ?? 0)
+            .compareTo((b['set_number'] as num?) ?? 0));
 
         final sets = setsData.map((sJson) {
           return WorkoutSet(
@@ -79,7 +79,8 @@ class SupabaseWorkoutRepository implements WorkoutRepository {
           id: item['id'] as String,
           userId: item['user_id'] as String,
           title: item['title'] as String? ?? 'Workout Session',
-          date: DateTime.tryParse(item['workout_date'] as String? ?? '') ?? DateTime.now(),
+          date: DateTime.tryParse(item['workout_date'] as String? ?? '') ??
+              DateTime.now(),
           durationMinutes: (item['duration_minutes'] as num?)?.toInt() ?? 45,
           exercises: exercises,
           notes: item['notes'] as String?,
@@ -93,73 +94,83 @@ class SupabaseWorkoutRepository implements WorkoutRepository {
 
   @override
   Future<void> saveWorkout(Workout workout) async {
-    if (!SupabaseConfig.isConfigured) return;
-
-    final client = Supabase.instance.client;
-
-    // 1. Upsert Workout
-    await client.from('workouts').upsert({
-      'id': workout.id,
-      'user_id': workout.userId,
-      'title': workout.title,
-      'workout_date': workout.date.toIso8601String(),
-      'duration_minutes': workout.durationMinutes,
-      'notes': workout.notes,
-    });
-
-    // 2. Clean previous exercises if updating
-    await client.from('workout_exercises').delete().eq('workout_id', workout.id);
-
-    // 3. Insert Exercises and Sets
-    for (int i = 0; i < workout.exercises.length; i++) {
-      final ex = workout.exercises[i];
-      final exId = const Uuid().v4();
-
-      await client.from('workout_exercises').insert({
-        'id': exId,
-        'workout_id': workout.id,
-        'exercise_name': ex.name,
-        'exercise_order': i,
-      });
-
-      if (ex.sets.isNotEmpty) {
-        final setsToInsert = ex.sets.map((s) => {
-          'workout_exercise_id': exId,
-          'set_number': s.setNumber,
-          'weight': s.weight,
-          'reps': s.reps,
-          'is_completed': s.isCompleted,
-        }).toList();
-
-        await client.from('workout_sets').insert(setsToInsert);
-      }
-
-      // 4. Update Personal Records (PRs)
-      if (ex.maxWeight > 0) {
-        final existingPR = await client
-            .from('personal_records')
-            .select()
-            .eq('user_id', workout.userId)
-            .eq('exercise_name', ex.name)
-            .maybeSingle();
-
-        final currentMax = (existingPR?['max_weight'] as num?)?.toDouble() ?? 0.0;
-        if (existingPR == null || ex.maxWeight > currentMax) {
-          await client.from('personal_records').upsert({
-            'user_id': workout.userId,
-            'exercise_name': ex.name,
-            'max_weight': ex.maxWeight,
-            'max_reps': ex.sets.isNotEmpty ? ex.sets.first.reps : 0,
-            'achieved_at': workout.date.toIso8601String(),
-            'workout_id': workout.id,
-          }, onConflict: 'user_id,exercise_name');
-        }
-      }
-    }
-
     _cache.removeWhere((w) => w.id == workout.id);
     _cache.insert(0, workout);
     _controller.add(List.unmodifiable(_cache));
+
+    if (!SupabaseConfig.isConfigured) return;
+
+    try {
+      final client = Supabase.instance.client;
+      if (client.auth.currentSession == null) return;
+
+      // 1. Upsert Workout
+      await client.from('workouts').upsert({
+        'id': workout.id,
+        'user_id': workout.userId,
+        'title': workout.title,
+        'workout_date': workout.date.toIso8601String(),
+        'duration_minutes': workout.durationMinutes,
+        'notes': workout.notes,
+      });
+
+      // 2. Clean previous exercises if updating
+      await client
+          .from('workout_exercises')
+          .delete()
+          .eq('workout_id', workout.id);
+
+      // 3. Insert Exercises and Sets
+      for (int i = 0; i < workout.exercises.length; i++) {
+        final ex = workout.exercises[i];
+        final exId = const Uuid().v4();
+
+        await client.from('workout_exercises').insert({
+          'id': exId,
+          'workout_id': workout.id,
+          'exercise_name': ex.name,
+          'exercise_order': i,
+        });
+
+        if (ex.sets.isNotEmpty) {
+          final setsToInsert = ex.sets.map((s) {
+            return {
+              'workout_exercise_id': exId,
+              'set_number': s.setNumber,
+              'weight': s.weight,
+              'reps': s.reps,
+              'is_completed': s.isCompleted,
+            };
+          }).toList();
+
+          await client.from('workout_sets').insert(setsToInsert);
+        }
+
+        // 4. Update Personal Records (PRs)
+        if (ex.maxWeight > 0) {
+          final existingPR = await client
+              .from('personal_records')
+              .select()
+              .eq('user_id', workout.userId)
+              .eq('exercise_name', ex.name)
+              .maybeSingle();
+
+          if (existingPR == null ||
+              (existingPR['max_weight'] as num) < ex.maxWeight) {
+            await client.from('personal_records').upsert({
+              'user_id': workout.userId,
+              'exercise_name': ex.name,
+              'max_weight': ex.maxWeight,
+              'max_reps': ex.sets.isNotEmpty ? ex.sets.first.reps : 0,
+              'achieved_at': workout.date.toIso8601String(),
+              'workout_id': workout.id,
+            }, onConflict: 'user_id,exercise_name');
+          }
+        }
+      }
+    } catch (e) {
+      // Remote sync error caught; local workout session is saved and active
+    }
   }
 
   @override
@@ -198,12 +209,14 @@ final workoutRepositoryProvider = Provider<WorkoutRepository>((ref) {
   return SupabaseWorkoutRepository();
 });
 
-final workoutsStreamProvider = StreamProvider.family<List<Workout>, String>((ref, userId) {
+final workoutsStreamProvider =
+    StreamProvider.family<List<Workout>, String>((ref, userId) {
   final repo = ref.watch(workoutRepositoryProvider);
   return repo.getWorkoutsStream(userId);
 });
 
-final personalRecordsProvider = FutureProvider.family<Map<String, double>, String>((ref, userId) async {
+final personalRecordsProvider =
+    FutureProvider.family<Map<String, double>, String>((ref, userId) async {
   final repo = ref.watch(workoutRepositoryProvider);
   return repo.getPersonalRecords(userId);
 });

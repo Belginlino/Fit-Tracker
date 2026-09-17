@@ -1,7 +1,8 @@
 class BodyMeasurement {
   final String id;
   final String userId;
-  final String type; // 'Weight', 'Chest', 'Waist', 'Hips', 'Left Arm', 'Right Arm', etc.
+  final String
+      type; // 'Weight', 'Chest', 'Waist', 'Hips', 'Left Arm', 'Right Arm', etc.
   final double value; // kg or cm
   final String unit; // 'kg' or 'cm' or '%'
   final DateTime recordedAt;

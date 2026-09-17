@@ -20,7 +20,8 @@ void main() {
 
     test('formats weight string with unit label', () {
       expect(UnitConverter.formatWeight(74.2), equals('74.2 kg'));
-      expect(UnitConverter.formatWeight(74.2, unit: WeightUnit.lbs), contains('lbs'));
+      expect(UnitConverter.formatWeight(74.2, unit: WeightUnit.lbs),
+          contains('lbs'));
     });
   });
 }

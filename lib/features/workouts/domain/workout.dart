@@ -160,7 +160,9 @@ class Workout {
       id: id,
       userId: map['userId'] as String? ?? '',
       title: map['title'] as String? ?? 'Workout',
-      date: map['date'] != null ? DateTime.tryParse(map['date'] as String) ?? DateTime.now() : DateTime.now(),
+      date: map['date'] != null
+          ? DateTime.tryParse(map['date'] as String) ?? DateTime.now()
+          : DateTime.now(),
       durationMinutes: (map['durationMinutes'] as num?)?.toInt() ?? 45,
       exercises: (map['exercises'] as List<dynamic>?)
               ?.map((e) => Exercise.fromMap(e as Map<String, dynamic>))

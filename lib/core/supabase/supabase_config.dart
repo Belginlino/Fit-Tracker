@@ -18,5 +18,6 @@ class SupabaseConfig {
   static const String photosBucket = 'progress-photos';
 
   static bool get isConfigured =>
-      url != 'YOUR_SUPABASE_URL_HERE' && anonKey != 'YOUR_SUPABASE_ANON_KEY_HERE';
+      url != 'YOUR_SUPABASE_URL_HERE' &&
+      anonKey != 'YOUR_SUPABASE_ANON_KEY_HERE';
 }

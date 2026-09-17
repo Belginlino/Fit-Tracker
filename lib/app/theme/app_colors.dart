@@ -1,51 +1,63 @@
 import 'package:flutter/material.dart';
 
 /// Centralized color tokens for FitTrack.
-/// Built with a sleek, high-contrast dark aesthetic for premium fitness apps.
+/// Built with a premium soft-neumorphic fitness aesthetic.
 class AppColors {
   AppColors._();
 
-  // Dark Theme Backgrounds & Surfaces
-  static const Color background = Color(0xFF090B10);
-  static const Color surface = Color(0xFF131722);
-  static const Color card = Color(0xFF1B2030);
-  static const Color cardElevated = Color(0xFF242B40);
+  // Neumorphic Backgrounds & Surfaces
+  static const Color background = Color(0xFFF7F3E8);
+  static const Color surface = Color(0xFFEEE8DC);
+  static const Color card =
+      Color(0xFFEEE8DC); // Same as surface for flat neumorphism
 
-  // Vibrant Athletic Accents
-  static const Color primary = Color(0xFF00E5FF); // Electric Cyan
-  static const Color primaryDark = Color(0xFF00B4CC);
-  static const Color accentLime = Color(0xFF39FF14); // High-voltage Green/Lime
-  static const Color accentOrange = Color(0xFFFF5722); // Energy Coral
-  static const Color accentAmber = Color(0xFFFFB300); // Streak Gold
+  // Shadows
+  static const Color shadow = Color(0xFFD1C7B7);
+  static const Color deepShadow = Color(0xFFC4B9A8);
+  static const Color highlight = Color(0xFFFFFFFF); // For upper-left highlights
+
+  // Vibrant Athletic Accents (Teal)
+  static const Color primary = Color(0xFF0D5B5B);
+  static const Color secondary = Color(0xFF0F3D3D);
+  static const Color lightTeal = Color(0xFFDCEBE7);
+
+  // Status & Accent
+  static const Color accentLime =
+      Color(0xFF0D5B5B); // Map previous lime usages to primary teal
+  static const Color accentOrange =
+      Color(0xFF0F3D3D); // Map previous orange to secondary teal
+  static const Color accentAmber =
+      Color(0xFFDCEBE7); // Map previous gold to light teal
 
   // Feedback & Status
-  static const Color success = Color(0xFF10B981);
-  static const Color error = Color(0xFFEF4444);
+  static const Color success = Color(0xFF0D6B63);
+  static const Color error = Color(0xFFB3261E);
   static const Color warning = Color(0xFFF59E0B);
-  static const Color info = Color(0xFF3B82F6);
+  static const Color info = Color(0xFF0D5B5B);
 
   // Typography & Content Colors
-  static const Color textPrimary = Color(0xFFF8FAFC);
-  static const Color textSecondary = Color(0xFF94A3B8);
-  static const Color textMuted = Color(0xFF64748B);
-  static const Color divider = Color(0xFF262E44);
-  static const Color border = Color(0xFF333D56);
+  static const Color textPrimary = Color(0xFF171717);
+  static const Color textSecondary = Color(0xFF65625C);
+  static const Color textMuted = Color(0xFF89847A);
+  static const Color divider =
+      Color(0xFFD1C7B7); // Use shadow color for dividers
+  static const Color border = Color(0xFFC4B9A8); // Use deep shadow for borders
 
-  // Gradients
+  // Preserve Gradients structurally but use new colors
   static const LinearGradient primaryGradient = LinearGradient(
-    colors: [Color(0xFF00E5FF), Color(0xFF39FF14)],
+    colors: [Color(0xFF0D5B5B), Color(0xFF0F3D3D)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
   static const LinearGradient streakGradient = LinearGradient(
-    colors: [Color(0xFFFF9100), Color(0xFFFF3D00)],
+    colors: [Color(0xFF0F3D3D), Color(0xFF0D5B5B)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
   static const LinearGradient cardGradient = LinearGradient(
-    colors: [Color(0xFF1B2030), Color(0xFF151926)],
+    colors: [Color(0xFFEEE8DC), Color(0xFFF7F3E8)],
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
   );

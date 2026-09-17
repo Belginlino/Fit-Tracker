@@ -27,7 +27,7 @@ void main() {
             name: 'Bench Press',
             sets: [
               WorkoutSet(setNumber: 1, weight: 50.0, reps: 10), // 500
-              WorkoutSet(setNumber: 2, weight: 60.0, reps: 5),  // 300
+              WorkoutSet(setNumber: 2, weight: 60.0, reps: 5), // 300
             ],
           ),
           Exercise(

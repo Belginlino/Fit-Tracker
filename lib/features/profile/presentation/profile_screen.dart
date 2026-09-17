@@ -6,6 +6,7 @@ import 'package:fittrack/app/theme/app_colors.dart';
 import 'package:fittrack/app/theme/app_typography.dart';
 import 'package:fittrack/core/widgets/app_button.dart';
 import 'package:fittrack/core/widgets/app_card.dart';
+import 'package:fittrack/core/widgets/neumorphic_container.dart';
 import 'package:fittrack/features/auth/data/auth_repository.dart';
 
 class ProfileScreen extends ConsumerWidget {
@@ -19,21 +20,39 @@ class ProfileScreen extends ConsumerWidget {
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: Text('Exported Personal Data', style: AppTypography.titleLarge),
-        content: SingleChildScrollView(
-          child: Text(
-            exportedJson,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: AppColors.textSecondary),
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+        child: NeumorphicContainer(
+          padding: const EdgeInsets.all(24),
+          borderRadius: 24,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('Exported Personal Data',
+                  style: AppTypography.titleLarge, textAlign: TextAlign.center),
+              const SizedBox(height: 24),
+              SizedBox(
+                height: 200,
+                child: SingleChildScrollView(
+                  child: Text(
+                    exportedJson,
+                    style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 11,
+                        color: AppColors.textSecondary),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              AppButton(
+                label: 'Done',
+                onPressed: () => Navigator.pop(ctx),
+              ),
+            ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Done', style: TextStyle(color: AppColors.primary)),
-          ),
-        ],
       ),
     );
   }
@@ -41,29 +60,53 @@ class ProfileScreen extends ConsumerWidget {
   void _confirmDeleteAccount(BuildContext context, WidgetRef ref) {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: const Text('Delete Account & Photos?'),
-        content: const Text(
-          'This action permanently purges your account, progress photos, workout logs, and weight history from Cloudflare D1 and R2 storage. This cannot be undone.',
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+        child: NeumorphicContainer(
+          padding: const EdgeInsets.all(24),
+          borderRadius: 24,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('Delete Account & Photos?',
+                  style: AppTypography.titleLarge, textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              const Text(
+                'This action permanently purges your account, progress photos, workout logs, and weight history from Cloudflare D1 and R2 storage. This cannot be undone.',
+                style: AppTypography.bodyMedium,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Cancel',
+                          style: TextStyle(color: AppColors.textMuted)),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: AppButton(
+                      label: 'Delete',
+                      type: AppButtonType.danger,
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        await ref.read(authRepositoryProvider).deleteAccount();
+                        if (context.mounted) {
+                          context.go('/login');
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error, foregroundColor: Colors.white),
-            onPressed: () async {
-              Navigator.pop(ctx);
-              await ref.read(authRepositoryProvider).deleteAccount();
-              if (context.mounted) {
-                context.go('/login');
-              }
-            },
-            child: const Text('Delete Permanently'),
-          ),
-        ],
       ),
     );
   }
@@ -75,45 +118,50 @@ class ProfileScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Profile & Settings'),
+        centerTitle: true,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // User Header Card
-            AppCard(
+            NeumorphicContainer(
+              padding: const EdgeInsets.all(24),
+              borderRadius: 24,
               child: Row(
                 children: [
-                  Container(
-                    width: 60,
-                    height: 60,
-                    decoration: BoxDecoration(
-                      gradient: AppColors.primaryGradient,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Center(
-                      child: Icon(Icons.person_rounded, size: 34, color: Colors.black),
-                    ),
+                  const NeumorphicContainer(
+                    width: 64,
+                    height: 64,
+                    shape: BoxShape.circle,
+                    padding: EdgeInsets.all(12),
+                    style: NeumorphicStyle.inset,
+                    child: Icon(Icons.person_rounded,
+                        size: 36, color: AppColors.primary),
                   ),
-                  const SizedBox(width: 16),
+                  const SizedBox(width: 20),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(user?.name ?? 'Athlete', style: AppTypography.titleLarge),
-                        const SizedBox(height: 2),
-                        Text(user?.email ?? '', style: AppTypography.bodySmall),
-                        const SizedBox(height: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withOpacity(0.12),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
+                        Text(user?.name ?? 'Athlete',
+                            style: AppTypography.titleLarge),
+                        const SizedBox(height: 4),
+                        Text(user?.email ?? '',
+                            style: AppTypography.bodyMedium),
+                        const SizedBox(height: 8),
+                        NeumorphicContainer(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          borderRadius: 8,
+                          style: NeumorphicStyle.inset,
                           child: Text(
                             user?.goal ?? 'Build Muscle',
-                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.primary),
+                            style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primary),
                           ),
                         ),
                       ],
@@ -122,56 +170,65 @@ class ProfileScreen extends ConsumerWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 32),
 
             // Physical Metrics Overview
             Row(
               children: [
                 Expanded(
-                  child: AppCard(
-                    padding: const EdgeInsets.all(12),
+                  child: NeumorphicContainer(
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 16, horizontal: 12),
+                    borderRadius: 16,
                     child: Column(
                       children: [
-                        Text('Current', style: AppTypography.bodySmall),
-                        const SizedBox(height: 4),
-                        Text('${user?.currentWeight ?? 74.2} kg', style: AppTypography.titleMedium),
+                        const Text('Current', style: AppTypography.bodySmall),
+                        const SizedBox(height: 8),
+                        Text('${user?.currentWeight ?? 74.2} kg',
+                            style: AppTypography.titleMedium),
                       ],
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 12),
                 Expanded(
-                  child: AppCard(
-                    padding: const EdgeInsets.all(12),
+                  child: NeumorphicContainer(
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 16, horizontal: 12),
+                    borderRadius: 16,
                     child: Column(
                       children: [
-                        Text('Target', style: AppTypography.bodySmall),
-                        const SizedBox(height: 4),
-                        Text('${user?.targetWeight ?? 78.0} kg', style: AppTypography.titleMedium),
+                        const Text('Target', style: AppTypography.bodySmall),
+                        const SizedBox(height: 8),
+                        Text('${user?.targetWeight ?? 78.0} kg',
+                            style: AppTypography.titleMedium),
                       ],
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 12),
                 Expanded(
-                  child: AppCard(
-                    padding: const EdgeInsets.all(12),
+                  child: NeumorphicContainer(
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 16, horizontal: 12),
+                    borderRadius: 16,
                     child: Column(
                       children: [
-                        Text('Height', style: AppTypography.bodySmall),
-                        const SizedBox(height: 4),
-                        Text('${user?.height.toInt() ?? 178} cm', style: AppTypography.titleMedium),
+                        const Text('Height', style: AppTypography.bodySmall),
+                        const SizedBox(height: 8),
+                        Text('${user?.height.toInt() ?? 178} cm',
+                            style: AppTypography.titleMedium),
                       ],
                     ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 40),
 
             // Settings List
-            Text('Account & Preferences', style: AppTypography.titleMedium),
-            const SizedBox(height: 12),
+            const Text('Account & Preferences', style: AppTypography.labelLarge),
+            const SizedBox(height: 16),
 
             _buildSettingTile(
               icon: Icons.scale_rounded,
@@ -197,7 +254,7 @@ class ProfileScreen extends ConsumerWidget {
               subtitle: 'Download structured records',
               onTap: () => _exportUserData(context, user),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 32),
 
             // Sign Out & Delete
             AppButton(
@@ -208,12 +265,13 @@ class ProfileScreen extends ConsumerWidget {
                 if (context.mounted) context.go('/login');
               },
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             AppButton(
               label: 'Delete Account',
               type: AppButtonType.danger,
               onPressed: () => _confirmDeleteAccount(context, ref),
             ),
+            const SizedBox(height: 40),
           ],
         ),
       ),
@@ -227,24 +285,31 @@ class ProfileScreen extends ConsumerWidget {
     required VoidCallback onTap,
   }) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 12),
       child: AppCard(
         onTap: onTap,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         child: Row(
           children: [
-            Icon(icon, color: AppColors.primary, size: 22),
-            const SizedBox(width: 14),
+            NeumorphicContainer(
+              shape: BoxShape.circle,
+              padding: const EdgeInsets.all(10),
+              child: Icon(icon, color: AppColors.primary, size: 20),
+            ),
+            const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: AppTypography.titleMedium.copyWith(fontSize: 15)),
+                  Text(title,
+                      style: AppTypography.titleMedium.copyWith(fontSize: 15)),
+                  const SizedBox(height: 4),
                   Text(subtitle, style: AppTypography.bodySmall),
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted, size: 20),
+            const Icon(Icons.chevron_right_rounded,
+                color: AppColors.textMuted, size: 20),
           ],
         ),
       ),

@@ -23,8 +23,8 @@ class UserProfile {
     this.targetWeight = 78.0,
     this.preferredWorkoutDays = const ['Mon', 'Tue', 'Thu', 'Fri'],
     this.reminderTime = '18:00',
-    this.workoutStreak = 5,
-    this.photoStreak = 4,
+    this.workoutStreak = 0,
+    this.photoStreak = 0,
     this.hasCompletedOnboarding = true,
     required this.createdAt,
   });
@@ -56,7 +56,8 @@ class UserProfile {
       reminderTime: reminderTime ?? this.reminderTime,
       workoutStreak: workoutStreak ?? this.workoutStreak,
       photoStreak: photoStreak ?? this.photoStreak,
-      hasCompletedOnboarding: hasCompletedOnboarding ?? this.hasCompletedOnboarding,
+      hasCompletedOnboarding:
+          hasCompletedOnboarding ?? this.hasCompletedOnboarding,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -80,13 +81,19 @@ class UserProfile {
   }
 
   factory UserProfile.fromMap(Map<String, dynamic> map, String id) {
-    final daysRaw = map['preferredWorkoutDays'] ?? map['preferred_days'] ?? map['preferred_workout_days'];
+    final daysRaw = map['preferredWorkoutDays'] ??
+        map['preferred_days'] ??
+        map['preferred_workout_days'];
     List<String> days = const ['Mon', 'Tue', 'Thu', 'Fri'];
     if (daysRaw is List) {
       days = daysRaw.map((e) => e.toString()).toList();
     } else if (daysRaw is String) {
       try {
-        final decoded = daysRaw.replaceAll('[', '').replaceAll(']', '').replaceAll('"', '').split(',');
+        final decoded = daysRaw
+            .replaceAll('[', '')
+            .replaceAll(']', '')
+            .replaceAll('"', '')
+            .split(',');
         days = decoded.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
       } catch (_) {}
     }
@@ -96,17 +103,32 @@ class UserProfile {
       email: map['email'] as String? ?? '',
       name: map['name'] as String? ?? 'Athlete',
       goal: map['goal'] as String? ?? 'Build Muscle',
-      currentWeight: (map['currentWeight'] ?? map['current_weight'] as num?)?.toDouble() ?? 74.2,
+      currentWeight: ((map['currentWeight'] ?? map['current_weight']) as num?)
+              ?.toDouble() ??
+          74.2,
       height: (map['height'] as num?)?.toDouble() ?? 178.0,
-      targetWeight: (map['targetWeight'] ?? map['target_weight'] as num?)?.toDouble() ?? 78.0,
+      targetWeight:
+          ((map['targetWeight'] ?? map['target_weight']) as num?)?.toDouble() ??
+              78.0,
       preferredWorkoutDays: days,
-      reminderTime: (map['reminderTime'] ?? map['preferred_reminder_time'] ?? map['reminder_time']) as String? ?? '18:00',
-      workoutStreak: (map['workoutStreak'] ?? map['workout_streak'] as num?)?.toInt() ?? 0,
-      photoStreak: (map['photoStreak'] ?? map['photo_streak'] as num?)?.toInt() ?? 0,
-      hasCompletedOnboarding: (map['hasCompletedOnboarding'] ?? map['has_completed_onboarding']) == 1 ||
-          (map['hasCompletedOnboarding'] ?? map['has_completed_onboarding']) == true,
+      reminderTime: (map['reminderTime'] ??
+              map['preferred_reminder_time'] ??
+              map['reminder_time']) as String? ??
+          '18:00',
+      workoutStreak:
+          ((map['workoutStreak'] ?? map['workout_streak']) as num?)?.toInt() ??
+              0,
+      photoStreak:
+          ((map['photoStreak'] ?? map['photo_streak']) as num?)?.toInt() ?? 0,
+      hasCompletedOnboarding: (map['hasCompletedOnboarding'] ??
+                  map['has_completed_onboarding']) ==
+              1 ||
+          (map['hasCompletedOnboarding'] ?? map['has_completed_onboarding']) ==
+              true,
       createdAt: (map['createdAt'] ?? map['created_at']) != null
-          ? DateTime.tryParse((map['createdAt'] ?? map['created_at']) as String) ?? DateTime.now()
+          ? DateTime.tryParse(
+                  (map['createdAt'] ?? map['created_at']) as String) ??
+              DateTime.now()
           : DateTime.now(),
     );
   }

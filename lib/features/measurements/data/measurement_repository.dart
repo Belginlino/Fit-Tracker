@@ -5,7 +5,8 @@ import 'package:fittrack/core/supabase/supabase_config.dart';
 import '../domain/measurement.dart';
 
 abstract class MeasurementRepository {
-  Stream<List<BodyMeasurement>> getMeasurementsStream(String userId, {String? type});
+  Stream<List<BodyMeasurement>> getMeasurementsStream(String userId,
+      {String? type});
   Future<List<BodyMeasurement>> getMeasurements(String userId, {String? type});
   Future<void> saveMeasurement(BodyMeasurement measurement);
   Future<void> deleteMeasurement(String measurementId);
@@ -17,11 +18,14 @@ class SupabaseMeasurementRepository implements MeasurementRepository {
   List<BodyMeasurement> _cache = [];
 
   @override
-  Stream<List<BodyMeasurement>> getMeasurementsStream(String userId, {String? type}) {
+  Stream<List<BodyMeasurement>> getMeasurementsStream(String userId,
+      {String? type}) {
     _fetchAndEmit(userId, type: type);
     return _controller.stream.map((list) {
       if (type != null) {
-        return list.where((m) => m.type.toLowerCase() == type.toLowerCase()).toList();
+        return list
+            .where((m) => m.type.toLowerCase() == type.toLowerCase())
+            .toList();
       }
       return list;
     });
@@ -38,13 +42,15 @@ class SupabaseMeasurementRepository implements MeasurementRepository {
   }
 
   @override
-  Future<List<BodyMeasurement>> getMeasurements(String userId, {String? type}) async {
+  Future<List<BodyMeasurement>> getMeasurements(String userId,
+      {String? type}) async {
     if (!SupabaseConfig.isConfigured) return [];
 
     final client = Supabase.instance.client;
     var query = client
         .from('measurements')
-        .select('id, user_id, measurement_type, value, unit, recorded_at, notes')
+        .select(
+            'id, user_id, measurement_type, value, unit, recorded_at, notes')
         .eq('user_id', userId);
 
     if (type != null) {
@@ -64,7 +70,8 @@ class SupabaseMeasurementRepository implements MeasurementRepository {
         type: formattedType,
         value: (item['value'] as num).toDouble(),
         unit: item['unit'] as String? ?? 'kg',
-        recordedAt: DateTime.tryParse(item['recorded_at'] as String? ?? '') ?? DateTime.now(),
+        recordedAt: DateTime.tryParse(item['recorded_at'] as String? ?? '') ??
+            DateTime.now(),
         note: item['notes'] as String?,
       );
     }).toList();
@@ -75,22 +82,25 @@ class SupabaseMeasurementRepository implements MeasurementRepository {
 
   @override
   Future<void> saveMeasurement(BodyMeasurement measurement) async {
-    if (!SupabaseConfig.isConfigured) return;
-
-    final client = Supabase.instance.client;
-    await client.from('measurements').upsert({
-      'id': measurement.id,
-      'user_id': measurement.userId,
-      'measurement_type': measurement.type.toLowerCase(),
-      'value': measurement.value,
-      'unit': measurement.unit,
-      'recorded_at': measurement.recordedAt.toIso8601String(),
-      'notes': measurement.note,
-    });
-
     _cache.removeWhere((m) => m.id == measurement.id);
     _cache.insert(0, measurement);
     _controller.add(List.unmodifiable(_cache));
+
+    if (!SupabaseConfig.isConfigured) return;
+
+    try {
+      final client = Supabase.instance.client;
+      if (client.auth.currentSession == null) return;
+      await client.from('measurements').upsert({
+        'id': measurement.id,
+        'user_id': measurement.userId,
+        'measurement_type': measurement.type.toLowerCase(),
+        'value': measurement.value,
+        'unit': measurement.unit,
+        'recorded_at': measurement.recordedAt.toIso8601String(),
+        'notes': measurement.note,
+      });
+    } catch (_) {}
   }
 
   @override
@@ -110,12 +120,14 @@ final measurementRepositoryProvider = Provider<MeasurementRepository>((ref) {
   return SupabaseMeasurementRepository();
 });
 
-final weightHistoryStreamProvider = StreamProvider.family<List<BodyMeasurement>, String>((ref, userId) {
+final weightHistoryStreamProvider =
+    StreamProvider.family<List<BodyMeasurement>, String>((ref, userId) {
   final repo = ref.watch(measurementRepositoryProvider);
   return repo.getMeasurementsStream(userId, type: 'Weight');
 });
 
-final bodyCircumferenceStreamProvider = StreamProvider.family<List<BodyMeasurement>, String>((ref, userId) {
+final bodyCircumferenceStreamProvider =
+    StreamProvider.family<List<BodyMeasurement>, String>((ref, userId) {
   final repo = ref.watch(measurementRepositoryProvider);
   return repo.getMeasurementsStream(userId);
 });

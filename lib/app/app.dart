@@ -14,9 +14,9 @@ class FitTrackApp extends ConsumerWidget {
     return MaterialApp.router(
       title: AppConstants.appName,
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
-      darkTheme: AppTheme.darkTheme,
-      themeMode: ThemeMode.dark,
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.lightTheme, // Force light for now as per reference
+      themeMode: ThemeMode.light,
       routerConfig: router,
     );
   }

@@ -4,6 +4,8 @@ import 'package:fittrack/app/theme/app_colors.dart';
 import 'package:fittrack/app/theme/app_typography.dart';
 import 'package:fittrack/core/utils/date_formatter.dart';
 import 'package:fittrack/core/widgets/app_card.dart';
+import 'package:fittrack/core/widgets/app_photo_image.dart';
+import 'package:fittrack/core/widgets/neumorphic_container.dart';
 import 'package:fittrack/features/auth/data/auth_repository.dart';
 import '../data/progress_photo_repository.dart';
 import '../domain/progress_photo.dart';
@@ -20,28 +22,36 @@ class ComparisonScreen extends ConsumerStatefulWidget {
 class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
   ComparisonMode _mode = ComparisonMode.slider;
   double _sliderPosition = 0.5; // 0.0 (all before) to 1.0 (all after)
-  int _beforeIndex = 2; // Oldest
-  int _afterIndex = 0; // Newest
+  final int _beforeIndex = 2; // Oldest
+  final int _afterIndex = 0; // Newest
   String _selectedPose = 'Front';
 
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProfileProvider);
-    final photosAsync = ref.watch(progressPhotosStreamProvider(user?.id ?? 'demo-user-101'));
+    final photosAsync =
+        ref.watch(progressPhotosStreamProvider(user?.id ?? 'athlete-user'));
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Transformation Compare'),
+        title: const Text('Compare Progress'),
+        centerTitle: true,
         actions: [
           IconButton(
             icon: Icon(
-              _mode == ComparisonMode.slider ? Icons.splitscreen_rounded : Icons.compare_arrows_rounded,
+              _mode == ComparisonMode.slider
+                  ? Icons.splitscreen_rounded
+                  : Icons.compare_arrows_rounded,
               color: AppColors.primary,
             ),
-            tooltip: _mode == ComparisonMode.slider ? 'Switch to Side-by-Side' : 'Switch to Split Slider',
+            tooltip: _mode == ComparisonMode.slider
+                ? 'Switch to Side-by-Side'
+                : 'Switch to Split Slider',
             onPressed: () {
               setState(() {
-                _mode = _mode == ComparisonMode.slider ? ComparisonMode.sideBySide : ComparisonMode.slider;
+                _mode = _mode == ComparisonMode.slider
+                    ? ComparisonMode.sideBySide
+                    : ComparisonMode.slider;
               });
             },
           ),
@@ -49,7 +59,8 @@ class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
       ),
       body: photosAsync.when(
         data: (allPhotos) {
-          final filtered = allPhotos.where((p) => p.pose == _selectedPose).toList();
+          final filtered =
+              allPhotos.where((p) => p.pose == _selectedPose).toList();
 
           if (filtered.length < 2) {
             return Center(
@@ -58,9 +69,11 @@ class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.photo_library_outlined, size: 64, color: AppColors.textMuted),
+                    const Icon(Icons.photo_library_outlined,
+                        size: 64, color: AppColors.textMuted),
                     const SizedBox(height: 16),
-                    Text('Need at least 2 photos', style: AppTypography.titleLarge),
+                    const Text('Need at least 2 photos',
+                        style: AppTypography.titleLarge),
                     const SizedBox(height: 8),
                     Text(
                       'Capture at least two "$_selectedPose" photos to compare your visual transformation.',
@@ -73,14 +86,22 @@ class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
             );
           }
 
-          final beforePhoto = _beforeIndex < filtered.length ? filtered[_beforeIndex] : filtered.last;
-          final afterPhoto = _afterIndex < filtered.length ? filtered[_afterIndex] : filtered.first;
+          final beforePhoto = _beforeIndex < filtered.length
+              ? filtered[_beforeIndex]
+              : filtered.last;
+          final afterPhoto = _afterIndex < filtered.length
+              ? filtered[_afterIndex]
+              : filtered.first;
 
-          final daysApart = afterPhoto.createdAt.difference(beforePhoto.createdAt).inDays.abs();
-          final weightDiff = (afterPhoto.weightAtCapture ?? 0) - (beforePhoto.weightAtCapture ?? 0);
+          final daysApart = afterPhoto.createdAt
+              .difference(beforePhoto.createdAt)
+              .inDays
+              .abs();
+          final weightDiff = (afterPhoto.weightAtCapture ?? 0) -
+              (beforePhoto.weightAtCapture ?? 0);
 
           return SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -89,49 +110,57 @@ class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     // Mode Pill
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: AppColors.card,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: AppColors.divider),
-                      ),
+                    NeumorphicContainer(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 10),
+                      borderRadius: 20,
+                      style: NeumorphicStyle.inset,
                       child: Text(
-                        _mode == ComparisonMode.slider ? 'Interactive Slider' : 'Side-by-Side',
-                        style: AppTypography.labelMedium.copyWith(color: AppColors.primary),
+                        _mode == ComparisonMode.slider
+                            ? 'Interactive Slider'
+                            : 'Side-by-Side',
+                        style: AppTypography.labelMedium
+                            .copyWith(color: AppColors.primary),
                       ),
                     ),
 
                     // Pose Filter
-                    DropdownButton<String>(
-                      value: _selectedPose,
-                      dropdownColor: AppColors.card,
-                      underline: const SizedBox.shrink(),
-                      icon: const Icon(Icons.arrow_drop_down_rounded, color: AppColors.primary),
-                      items: ['Front', 'Side', 'Back', 'Free'].map((pose) {
-                        return DropdownMenuItem(
-                          value: pose,
-                          child: Text(
-                            pose,
-                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                          ),
-                        );
-                      }).toList(),
-                      onChanged: (val) {
-                        if (val != null) setState(() => _selectedPose = val);
-                      },
+                    NeumorphicContainer(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 4),
+                      borderRadius: 12,
+                      child: DropdownButton<String>(
+                        value: _selectedPose,
+                        dropdownColor: AppColors.surface,
+                        underline: const SizedBox.shrink(),
+                        icon: const Icon(Icons.arrow_drop_down_rounded,
+                            color: AppColors.primary),
+                        items: ['Front', 'Side', 'Back'].map((pose) {
+                          return DropdownMenuItem(
+                            value: pose,
+                            child: Text(
+                              pose,
+                              style: const TextStyle(
+                                  fontSize: 14, fontWeight: FontWeight.w600),
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (val) {
+                          if (val != null) setState(() => _selectedPose = val);
+                        },
+                      ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 24),
 
                 // Comparison Viewer
                 _mode == ComparisonMode.slider
                     ? _buildSliderComparison(beforePhoto, afterPhoto)
                     : _buildSideBySideComparison(beforePhoto, afterPhoto),
-                const SizedBox(height: 20),
+                const SizedBox(height: 24),
 
-                // Metadata Delta Summary Card (Section 15)
+                // Metadata Delta Summary Card
                 AppCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -139,13 +168,13 @@ class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('Transformation Metrics', style: AppTypography.titleMedium),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: AppColors.primary.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
+                          const Text('Transformation Metrics',
+                              style: AppTypography.titleMedium),
+                          NeumorphicContainer(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
+                            style: NeumorphicStyle.inset,
+                            borderRadius: 10,
                             child: Text(
                               '$daysApart Days Apart',
                               style: const TextStyle(
@@ -162,33 +191,37 @@ class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
                         children: [
                           Expanded(
                             child: _buildMetricItem(
-                              label: 'Before Weight',
-                              value: '${beforePhoto.weightAtCapture ?? "--"} kg',
-                              subtitle: DateFormatter.formatTimelineDate(beforePhoto.createdAt),
+                              label: 'Before',
+                              value:
+                                  '${beforePhoto.weightAtCapture ?? "--"} kg',
+                              subtitle: DateFormatter.formatTimelineDate(
+                                  beforePhoto.createdAt),
                             ),
                           ),
                           Container(
                             height: 40,
                             width: 1,
-                            color: AppColors.divider,
+                            color: AppColors.border,
                           ),
                           Expanded(
                             child: _buildMetricItem(
-                              label: 'After Weight',
+                              label: 'After',
                               value: '${afterPhoto.weightAtCapture ?? "--"} kg',
-                              subtitle: DateFormatter.formatTimelineDate(afterPhoto.createdAt),
+                              subtitle: DateFormatter.formatTimelineDate(
+                                  afterPhoto.createdAt),
                             ),
                           ),
                           Container(
                             height: 40,
                             width: 1,
-                            color: AppColors.divider,
+                            color: AppColors.border,
                           ),
                           Expanded(
                             child: _buildMetricItem(
-                              label: 'Weight Delta',
-                              value: '${weightDiff >= 0 ? "+" : ""}${weightDiff.toStringAsFixed(1)} kg',
-                              valueColor: weightDiff >= 0 ? AppColors.accentLime : AppColors.primary,
+                              label: 'Delta',
+                              value:
+                                  '${weightDiff >= 0 ? "+" : ""}${weightDiff.toStringAsFixed(1)} kg',
+                              valueColor: AppColors.primary,
                               subtitle: 'Net change',
                             ),
                           ),
@@ -198,32 +231,6 @@ class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-
-                // Milestone Notes
-                if (beforePhoto.notes != null || afterPhoto.notes != null)
-                  AppCard(
-                    color: AppColors.surface,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Recorded Journal Notes', style: AppTypography.labelLarge),
-                        const SizedBox(height: 10),
-                        if (beforePhoto.notes != null)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 6),
-                            child: Text(
-                              'Before: "${beforePhoto.notes}"',
-                              style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
-                            ),
-                          ),
-                        if (afterPhoto.notes != null)
-                          Text(
-                            'After: "${afterPhoto.notes}"',
-                            style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
-                          ),
-                      ],
-                    ),
-                  ),
               ],
             ),
           );
@@ -252,19 +259,17 @@ class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
           ),
         ),
         const SizedBox(height: 2),
-        Text(subtitle, style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
+        Text(subtitle,
+            style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
       ],
     );
   }
 
   Widget _buildSliderComparison(ProgressPhoto before, ProgressPhoto after) {
-    return Container(
+    return NeumorphicContainer(
       height: 380,
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.divider),
-      ),
+      borderRadius: 20,
+      padding: EdgeInsets.zero,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
         child: LayoutBuilder(
@@ -275,7 +280,8 @@ class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
             return GestureDetector(
               onHorizontalDragUpdate: (details) {
                 setState(() {
-                  _sliderPosition = (details.localPosition.dx / width).clamp(0.05, 0.95);
+                  _sliderPosition =
+                      (details.localPosition.dx / width).clamp(0.05, 0.95);
                 });
               },
               child: Stack(
@@ -286,8 +292,8 @@ class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
                     photo: after,
                     label: 'AFTER',
                     date: DateFormatter.formatTimelineDate(after.createdAt),
-                    color: const Color(0xFF1E2638),
-                    accentColor: AppColors.accentLime,
+                    color: AppColors.surface,
+                    accentColor: AppColors.primary,
                   ),
 
                   // Before Photo (Clipped to left side of divider)
@@ -297,8 +303,8 @@ class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
                       photo: before,
                       label: 'BEFORE',
                       date: DateFormatter.formatTimelineDate(before.createdAt),
-                      color: const Color(0xFF161B28),
-                      accentColor: AppColors.primary,
+                      color: AppColors.background,
+                      accentColor: AppColors.textSecondary,
                     ),
                   ),
 
@@ -312,11 +318,11 @@ class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
                         width: 36,
                         height: 36,
                         decoration: BoxDecoration(
-                          color: AppColors.primary,
+                          color: AppColors.surface,
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.5),
+                              color: AppColors.primary.withValues(alpha: 0.3),
                               blurRadius: 10,
                               offset: const Offset(0, 4),
                             ),
@@ -324,7 +330,7 @@ class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
                         ),
                         child: const Icon(
                           Icons.compare_arrows_rounded,
-                          color: Colors.black,
+                          color: AppColors.primary,
                           size: 22,
                         ),
                       ),
@@ -352,40 +358,36 @@ class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
     return Row(
       children: [
         Expanded(
-          child: Container(
+          child: NeumorphicContainer(
             height: 340,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.primary.withOpacity(0.4), width: 1.5),
-            ),
+            borderRadius: 16,
+            padding: EdgeInsets.zero,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(16),
               child: _buildPhotoPlaceholder(
                 photo: before,
                 label: 'BEFORE',
                 date: DateFormatter.formatTimelineDate(before.createdAt),
-                color: const Color(0xFF161B28),
-                accentColor: AppColors.primary,
+                color: AppColors.background,
+                accentColor: AppColors.textSecondary,
               ),
             ),
           ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 16),
         Expanded(
-          child: Container(
+          child: NeumorphicContainer(
             height: 340,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.accentLime.withOpacity(0.4), width: 1.5),
-            ),
+            borderRadius: 16,
+            padding: EdgeInsets.zero,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(16),
               child: _buildPhotoPlaceholder(
                 photo: after,
                 label: 'AFTER',
                 date: DateFormatter.formatTimelineDate(after.createdAt),
-                color: const Color(0xFF1E2638),
-                accentColor: AppColors.accentLime,
+                color: AppColors.surface,
+                accentColor: AppColors.primary,
               ),
             ),
           ),
@@ -406,17 +408,26 @@ class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.person_outline_rounded, size: 70, color: accentColor.withOpacity(0.7)),
-                const SizedBox(height: 8),
-                Text(
-                  '${photo.weightAtCapture ?? "--"} kg',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: accentColor),
-                ),
-              ],
+          AppPhotoImage(
+            localPath: photo.localFilePath,
+            remoteUrl: photo.downloadUrl,
+            fit: BoxFit.cover,
+            placeholder: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.person_outline_rounded,
+                      size: 70, color: accentColor.withValues(alpha: 0.7)),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${photo.weightAtCapture ?? "--"} kg',
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: accentColor),
+                  ),
+                ],
+              ),
             ),
           ),
           Positioned(
@@ -425,12 +436,15 @@ class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.65),
+                color: AppColors.surface.withValues(alpha: 0.8),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
                 label,
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: accentColor),
+                style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: accentColor),
               ),
             ),
           ),
@@ -441,13 +455,16 @@ class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.65),
+                color: AppColors.surface.withValues(alpha: 0.8),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
                 date,
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white),
+                style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary),
               ),
             ),
           ),
@@ -467,5 +484,6 @@ class _SliderClipper extends CustomClipper<Rect> {
   }
 
   @override
-  bool shouldReclip(covariant _SliderClipper oldClipper) => oldClipper.width != width;
+  bool shouldReclip(covariant _SliderClipper oldClipper) =>
+      oldClipper.width != width;
 }

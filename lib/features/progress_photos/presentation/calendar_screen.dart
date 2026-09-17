@@ -5,7 +5,9 @@ import 'package:fittrack/app/theme/app_typography.dart';
 import 'package:fittrack/core/utils/date_formatter.dart';
 import 'package:fittrack/core/widgets/app_card.dart';
 import 'package:fittrack/features/auth/data/auth_repository.dart';
+import 'package:fittrack/features/workouts/data/workout_repository.dart';
 import '../data/progress_photo_repository.dart';
+import '../domain/progress_photo.dart';
 
 class CalendarScreen extends ConsumerStatefulWidget {
   const CalendarScreen({super.key});
@@ -21,7 +23,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProfileProvider);
-    final photosAsync = ref.watch(progressPhotosStreamProvider(user?.id ?? 'demo-user-101'));
+    final photosAsync =
+        ref.watch(progressPhotosStreamProvider(user?.id ?? 'athlete-user'));
 
     return Scaffold(
       appBar: AppBar(
@@ -29,6 +32,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       ),
       body: photosAsync.when(
         data: (photos) {
+          final workoutsAsync =
+              ref.watch(workoutsStreamProvider(user?.id ?? 'athlete-user'));
+          final workouts = workoutsAsync.value ?? [];
           return SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Column(
@@ -42,7 +48,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                       icon: const Icon(Icons.chevron_left_rounded, size: 28),
                       onPressed: () {
                         setState(() {
-                          _currentMonth = DateTime(_currentMonth.year, _currentMonth.month - 1);
+                          _currentMonth = DateTime(
+                              _currentMonth.year, _currentMonth.month - 1);
                         });
                       },
                     ),
@@ -54,7 +61,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                       icon: const Icon(Icons.chevron_right_rounded, size: 28),
                       onPressed: () {
                         setState(() {
-                          _currentMonth = DateTime(_currentMonth.year, _currentMonth.month + 1);
+                          _currentMonth = DateTime(
+                              _currentMonth.year, _currentMonth.month + 1);
                         });
                       },
                     ),
@@ -70,7 +78,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                       // Weekday Headers
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day) {
+                        children:
+                            ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day) {
                           return SizedBox(
                             width: 38,
                             child: Text(
@@ -87,7 +96,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                       const SizedBox(height: 12),
 
                       // Days of Month
-                      _buildMonthDaysGrid(photos),
+                      _buildMonthDaysGrid(photos, workouts),
                     ],
                   ),
                 ),
@@ -97,11 +106,13 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    _buildLegendItem(color: AppColors.accentLime, label: 'Workout'),
+                    _buildLegendItem(
+                        color: AppColors.accentLime, label: 'Workout'),
                     const SizedBox(width: 16),
                     _buildLegendItem(color: AppColors.primary, label: 'Photo'),
                     const SizedBox(width: 16),
-                    _buildLegendItem(color: AppColors.accentAmber, label: 'Both'),
+                    _buildLegendItem(
+                        color: AppColors.accentAmber, label: 'Both'),
                   ],
                 ),
                 const SizedBox(height: 24),
@@ -112,7 +123,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                   style: AppTypography.titleMedium,
                 ),
                 const SizedBox(height: 12),
-                _buildSelectedDateDetails(photos),
+                _buildSelectedDateDetails(photos, workouts),
               ],
             ),
           );
@@ -123,9 +134,12 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
   }
 
-  Widget _buildMonthDaysGrid(List<dynamic> photos) {
-    final firstDayOfMonth = DateTime(_currentMonth.year, _currentMonth.month, 1);
-    final daysInMonth = DateTime(_currentMonth.year, _currentMonth.month + 1, 0).day;
+  Widget _buildMonthDaysGrid(
+      List<ProgressPhoto> photos, List<dynamic> workouts) {
+    final firstDayOfMonth =
+        DateTime(_currentMonth.year, _currentMonth.month, 1);
+    final daysInMonth =
+        DateTime(_currentMonth.year, _currentMonth.month + 1, 0).day;
     final startWeekday = firstDayOfMonth.weekday; // 1 = Mon, 7 = Sun
 
     final totalCells = ((daysInMonth + startWeekday - 1) / 7).ceil() * 7;
@@ -145,13 +159,20 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           return const SizedBox.shrink();
         }
 
-        final cellDate = DateTime(_currentMonth.year, _currentMonth.month, dayNumber);
+        final cellDate =
+            DateTime(_currentMonth.year, _currentMonth.month, dayNumber);
         final isSelected = DateFormatter.isSameDay(cellDate, _selectedDate);
         final isToday = DateFormatter.isSameDay(cellDate, DateTime.now());
 
         // Check if there is photo on this date
-        final hasPhoto = dayNumber % 3 == 0 || isToday; // demo active activity
-        final hasWorkout = dayNumber % 2 == 0 || isToday;
+        final hasPhoto = photos.any((p) =>
+            p.createdAt.year == cellDate.year &&
+            p.createdAt.month == cellDate.month &&
+            p.createdAt.day == cellDate.day);
+        final hasWorkout = workouts.any((w) =>
+            w.date.year == cellDate.year &&
+            w.date.month == cellDate.month &&
+            w.date.day == cellDate.day);
 
         Color? dotColor;
         if (hasPhoto && hasWorkout) {
@@ -166,7 +187,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           onTap: () => setState(() => _selectedDate = cellDate),
           child: Container(
             decoration: BoxDecoration(
-              color: isSelected ? AppColors.primary.withOpacity(0.2) : Colors.transparent,
+              color: isSelected
+                  ? AppColors.primary.withValues(alpha: 0.2)
+                  : Colors.transparent,
               borderRadius: BorderRadius.circular(10),
               border: isToday
                   ? Border.all(color: AppColors.primary, width: 1.5)
@@ -179,8 +202,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                   '$dayNumber',
                   style: TextStyle(
                     fontSize: 13,
-                    fontWeight: isToday || isSelected ? FontWeight.w800 : FontWeight.w500,
-                    color: isSelected ? AppColors.primary : AppColors.textPrimary,
+                    fontWeight: isToday || isSelected
+                        ? FontWeight.w800
+                        : FontWeight.w500,
+                    color:
+                        isSelected ? AppColors.primary : AppColors.textPrimary,
                   ),
                 ),
                 if (dotColor != null) ...[
@@ -202,57 +228,102 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
   }
 
-  Widget _buildSelectedDateDetails(List<dynamic> photos) {
+  Widget _buildSelectedDateDetails(
+      List<ProgressPhoto> photos, List<dynamic> workouts) {
+    final dayPhotos = photos
+        .where((p) =>
+            p.createdAt.year == _selectedDate.year &&
+            p.createdAt.month == _selectedDate.month &&
+            p.createdAt.day == _selectedDate.day)
+        .toList();
+    final dayWorkouts = workouts
+        .where((w) =>
+            w.date.year == _selectedDate.year &&
+            w.date.month == _selectedDate.month &&
+            w.date.day == _selectedDate.day)
+        .toList();
+
+    if (dayPhotos.isEmpty && dayWorkouts.isEmpty) {
+      return const AppCard(
+        child: Center(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('No activity recorded on this date.',
+                style: AppTypography.bodyMedium),
+          ),
+        ),
+      );
+    }
+
     return AppCard(
       child: Column(
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.accentLime.withOpacity(0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.fitness_center_rounded, color: AppColors.accentLime, size: 20),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          ...dayWorkouts.map((w) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
                   children: [
-                    Text('Chest + Triceps', style: AppTypography.titleMedium),
-                    Text('4 exercises · 12 sets · 48 min', style: AppTypography.bodySmall),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.accentLime.withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.fitness_center_rounded,
+                          color: AppColors.accentLime, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(w.title, style: AppTypography.titleMedium),
+                          Text(
+                              '${w.exercises.length} exercises · ${w.totalSets} sets · ${w.durationMinutes} min',
+                              style: AppTypography.bodySmall),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.check_circle_rounded,
+                        color: AppColors.accentLime, size: 20),
                   ],
                 ),
-              ),
-              const Icon(Icons.check_circle_rounded, color: AppColors.accentLime, size: 20),
-            ],
-          ),
-          const Divider(height: 24),
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.photo_camera_rounded, color: AppColors.primary, size: 20),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              )),
+          if (dayWorkouts.isNotEmpty && dayPhotos.isNotEmpty)
+            const Divider(height: 24),
+          ...dayPhotos.map((p) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
                   children: [
-                    Text('Front Pose Photo', style: AppTypography.titleMedium),
-                    Text('Weight: 74.2 kg · Saved to Private Cloud', style: AppTypography.bodySmall),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.photo_camera_rounded,
+                          color: AppColors.primary, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('${p.pose} Pose Photo',
+                              style: AppTypography.titleMedium),
+                          Text(
+                            p.weightAtCapture != null
+                                ? 'Weight: ${p.weightAtCapture!.toStringAsFixed(1)} kg'
+                                : 'Progress photo captured',
+                            style: AppTypography.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.check_circle_rounded,
+                        color: AppColors.primary, size: 20),
                   ],
                 ),
-              ),
-              const Icon(Icons.check_circle_rounded, color: AppColors.primary, size: 20),
-            ],
-          ),
+              )),
         ],
       ),
     );
@@ -275,8 +346,18 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 
   String _getMonthName(int month) {
     const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December'
     ];
     return months[month - 1];
   }

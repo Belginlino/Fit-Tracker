@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/widgets/neumorphic_container.dart';
 import 'package:go_router/go_router.dart';
 import '../features/analytics/presentation/analytics_screen.dart';
 import '../features/auth/presentation/screens/login_screen.dart';
@@ -87,39 +88,46 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state, navigationShell) {
           return Scaffold(
             body: navigationShell,
-            bottomNavigationBar: BottomNavigationBar(
-              currentIndex: navigationShell.currentIndex,
-              onTap: (index) => navigationShell.goBranch(
-                index,
-                initialLocation: index == navigationShell.currentIndex,
+            bottomNavigationBar: NeumorphicContainer(
+              borderRadius: 0,
+              padding: const EdgeInsets.only(top: 8),
+              style: NeumorphicStyle.raised, // Or flat with outer shadow
+              child: BottomNavigationBar(
+                currentIndex: navigationShell.currentIndex,
+                elevation: 0,
+                backgroundColor: Colors.transparent,
+                onTap: (index) => navigationShell.goBranch(
+                  index,
+                  initialLocation: index == navigationShell.currentIndex,
+                ),
+                items: const [
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.home_outlined),
+                    activeIcon: Icon(Icons.home_filled),
+                    label: 'Home',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.auto_graph_outlined),
+                    activeIcon: Icon(Icons.auto_graph_rounded),
+                    label: 'Progress',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.fitness_center_outlined),
+                    activeIcon: Icon(Icons.fitness_center_rounded),
+                    label: 'Workout',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.insights_rounded),
+                    activeIcon: Icon(Icons.insights_rounded),
+                    label: 'Analytics',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.person_outline_rounded),
+                    activeIcon: Icon(Icons.person_rounded),
+                    label: 'Profile',
+                  ),
+                ],
               ),
-              items: const [
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.home_outlined),
-                  activeIcon: Icon(Icons.home_filled),
-                  label: 'Home',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.auto_graph_outlined),
-                  activeIcon: Icon(Icons.auto_graph_rounded),
-                  label: 'Progress',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.fitness_center_outlined),
-                  activeIcon: Icon(Icons.fitness_center_rounded),
-                  label: 'Workout',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.insights_rounded),
-                  activeIcon: Icon(Icons.insights_rounded),
-                  label: 'Analytics',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.person_outline_rounded),
-                  activeIcon: Icon(Icons.person_rounded),
-                  label: 'Profile',
-                ),
-              ],
             ),
           );
         },

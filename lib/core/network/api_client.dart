@@ -64,7 +64,8 @@ class ApiClient {
     }
   }
 
-  Future<dynamic> postBytes(String url, Uint8List bytes, {String contentType = 'image/jpeg'}) async {
+  Future<dynamic> postBytes(String url, Uint8List bytes,
+      {String contentType = 'image/jpeg'}) async {
     try {
       final headers = _buildHeaders(isJson: false);
       headers['Content-Type'] = contentType;
@@ -97,7 +98,8 @@ class ApiClient {
 
   Future<dynamic> delete(String url) async {
     try {
-      final response = await http.delete(Uri.parse(url), headers: _buildHeaders());
+      final response =
+          await http.delete(Uri.parse(url), headers: _buildHeaders());
       return _processResponse(response);
     } catch (e) {
       if (e is Failure) rethrow;

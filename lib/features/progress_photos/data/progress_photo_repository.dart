@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:fittrack/core/supabase/supabase_config.dart';
 import '../domain/progress_photo.dart';
@@ -67,7 +67,8 @@ class SupabaseProgressPhotoRepository implements ProgressPhotoRepository {
           workoutId: item['workout_id'] as String?,
           weightAtCapture: (item['weight_at_capture'] as num?)?.toDouble(),
           notes: item['notes'] as String?,
-          createdAt: DateTime.tryParse(item['created_at'] as String? ?? '') ?? DateTime.now(),
+          createdAt: DateTime.tryParse(item['created_at'] as String? ?? '') ??
+              DateTime.now(),
         ),
       );
     }
@@ -78,55 +79,63 @@ class SupabaseProgressPhotoRepository implements ProgressPhotoRepository {
 
   @override
   Future<void> savePhoto(ProgressPhoto photo) async {
+    _cache.removeWhere((p) => p.id == photo.id);
+    _cache.insert(0, photo);
+    _controller.add(List.unmodifiable(_cache));
+
     if (!SupabaseConfig.isConfigured) return;
 
     final client = Supabase.instance.client;
     String storagePath = photo.storagePath;
     String? downloadUrl = photo.downloadUrl;
 
-    // 1. Upload image to Supabase Storage if local file exists
-    if (photo.localFilePath != null) {
-      final file = File(photo.localFilePath!);
-      if (await file.exists()) {
+    try {
+      if (client.auth.currentSession != null && photo.localFilePath != null) {
+        final xFile = XFile(photo.localFilePath!);
+        final bytes = await xFile.readAsBytes();
         final isPng = photo.localFilePath!.toLowerCase().endsWith('.png');
-        final ext = isPng ? 'png' : 'webp';
-        final mimeType = isPng ? 'image/png' : 'image/webp';
+        final ext = isPng ? 'png' : 'jpg';
+        final mimeType = isPng ? 'image/png' : 'image/jpeg';
         storagePath = '${photo.userId}/progress/${photo.id}/original.$ext';
 
-        await client.storage.from(SupabaseConfig.photosBucket).upload(
+        await client.storage.from(SupabaseConfig.photosBucket).uploadBinary(
               storagePath,
-              file,
+              bytes,
               fileOptions: FileOptions(contentType: mimeType, upsert: true),
             );
 
         try {
           downloadUrl = await client.storage
               .from(SupabaseConfig.photosBucket)
-              .createSignedUrl(storagePath, 60 * 60 * 24 * 30); // 30 days
+              .createSignedUrl(storagePath, 60 * 60 * 24 * 30);
         } catch (_) {}
       }
+
+      if (client.auth.currentSession != null) {
+        await client.from('progress_photos').upsert({
+          'id': photo.id,
+          'user_id': photo.userId,
+          'storage_path': storagePath,
+          'pose': photo.pose,
+          'workout_id': photo.workoutId,
+          'weight_at_capture': photo.weightAtCapture,
+          'notes': photo.notes,
+          'created_at': photo.createdAt.toIso8601String(),
+        });
+      }
+
+      if (downloadUrl != null) {
+        final updated = photo.copyWith(
+          storagePath: storagePath,
+          downloadUrl: downloadUrl,
+        );
+        _cache.removeWhere((p) => p.id == photo.id);
+        _cache.insert(0, updated);
+        _controller.add(List.unmodifiable(_cache));
+      }
+    } catch (_) {
+      // Remote sync error caught; local photo remains visible and usable
     }
-
-    // 2. Insert metadata row in PostgreSQL
-    await client.from('progress_photos').upsert({
-      'id': photo.id,
-      'user_id': photo.userId,
-      'storage_path': storagePath,
-      'pose': photo.pose,
-      'workout_id': photo.workoutId,
-      'weight_at_capture': photo.weightAtCapture,
-      'notes': photo.notes,
-      'created_at': photo.createdAt.toIso8601String(),
-    });
-
-    final created = photo.copyWith(
-      storagePath: storagePath,
-      downloadUrl: downloadUrl,
-    );
-
-    _cache.removeWhere((p) => p.id == photo.id);
-    _cache.insert(0, created);
-    _controller.add(List.unmodifiable(_cache));
   }
 
   @override
@@ -159,11 +168,13 @@ class SupabaseProgressPhotoRepository implements ProgressPhotoRepository {
 }
 
 // Global Riverpod Providers
-final progressPhotoRepositoryProvider = Provider<ProgressPhotoRepository>((ref) {
+final progressPhotoRepositoryProvider =
+    Provider<ProgressPhotoRepository>((ref) {
   return SupabaseProgressPhotoRepository();
 });
 
-final progressPhotosStreamProvider = StreamProvider.family<List<ProgressPhoto>, String>((ref, userId) {
+final progressPhotosStreamProvider =
+    StreamProvider.family<List<ProgressPhoto>, String>((ref, userId) {
   final repo = ref.watch(progressPhotoRepositoryProvider);
   return repo.getPhotosStream(userId);
 });
