@@ -104,24 +104,36 @@ class _BodyMeasurementsScreenState
                             label: 'Save',
                             onPressed: () async {
                               final val =
-                                  double.tryParse(_valueController.text);
-                              if (val != null) {
-                                final user =
-                                    ref.read(currentUserProfileProvider);
-                                final repo =
-                                    ref.read(measurementRepositoryProvider);
-                                await repo.saveMeasurement(
-                                  BodyMeasurement(
-                                    id: 'bm-${DateTime.now().millisecondsSinceEpoch}',
-                                    userId: user?.id ?? '',
-                                    type: _selectedPart,
-                                    value: val,
-                                    unit: 'cm',
-                                    recordedAt: DateTime.now(),
+                                  double.tryParse(_valueController.text.trim());
+                              if (val == null ||
+                                  val.isNaN ||
+                                  val.isInfinite ||
+                                  val <= 5.0 ||
+                                  val >= 300.0) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                        'Please enter a valid circumference between 5 and 300 cm'),
+                                    backgroundColor: AppColors.error,
                                   ),
                                 );
-                                if (mounted) Navigator.pop(ctx);
+                                return;
                               }
+                              final user =
+                                  ref.read(currentUserProfileProvider);
+                              final repo =
+                                  ref.read(measurementRepositoryProvider);
+                              await repo.saveMeasurement(
+                                BodyMeasurement(
+                                  id: 'bm-${DateTime.now().millisecondsSinceEpoch}',
+                                  userId: user?.id ?? '',
+                                  type: _selectedPart,
+                                  value: val,
+                                  unit: 'cm',
+                                  recordedAt: DateTime.now(),
+                                ),
+                              );
+                              if (mounted) Navigator.pop(ctx);
                             },
                           ),
                         ),

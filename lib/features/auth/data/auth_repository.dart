@@ -8,6 +8,8 @@ import '../domain/user_model.dart';
 abstract class AuthRepository {
   Stream<UserProfile?> authStateChanges();
   UserProfile? get currentUser;
+  bool get isInitialized;
+  Future<void> get initializationDone;
   Future<UserProfile> signInWithEmail(String email, String password);
   Future<UserProfile> registerWithEmail(
       String email, String password, String name);
@@ -20,7 +22,15 @@ abstract class AuthRepository {
 /// Appwrite Auth & Profiles Repository
 class AppwriteAuthRepository implements AuthRepository {
   final _controller = StreamController<UserProfile?>.broadcast();
+  final _initCompleter = Completer<void>();
+  bool _initialized = false;
   UserProfile? _currentUser;
+
+  @override
+  bool get isInitialized => _initialized;
+
+  @override
+  Future<void> get initializationDone => _initCompleter.future;
 
   AppwriteAuthRepository() {
     _init();
@@ -29,6 +39,7 @@ class AppwriteAuthRepository implements AuthRepository {
   void _init() async {
     if (!AppwriteConfig.isConfigured) {
       _controller.add(null);
+      _markInitialized();
       return;
     }
 
@@ -38,6 +49,15 @@ class AppwriteAuthRepository implements AuthRepository {
     } catch (_) {
       _currentUser = null;
       _controller.add(null);
+    } finally {
+      _markInitialized();
+    }
+  }
+
+  void _markInitialized() {
+    if (!_initCompleter.isCompleted) {
+      _initialized = true;
+      _initCompleter.complete();
     }
   }
 
@@ -314,4 +334,10 @@ final authStateChangesProvider = StreamProvider<UserProfile?>((ref) {
 final currentUserProfileProvider = StateProvider<UserProfile?>((ref) {
   final authState = ref.watch(authStateChangesProvider).value;
   return authState;
+});
+
+final authInitializedProvider = FutureProvider<bool>((ref) async {
+  final repo = ref.watch(authRepositoryProvider);
+  await repo.initializationDone;
+  return true;
 });

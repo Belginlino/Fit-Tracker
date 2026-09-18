@@ -36,8 +36,21 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
           child: NeumorphicContainer(
             borderRadius: 12,
             child: IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-              onPressed: () => context.pop(),
+              icon: Icon(
+                context.canPop()
+                    ? Icons.arrow_back_ios_new_rounded
+                    : Icons.calendar_month_rounded,
+                size: 20,
+                color: AppColors.primary,
+              ),
+              tooltip: context.canPop() ? 'Back' : 'Calendar View',
+              onPressed: () {
+                if (context.canPop()) {
+                  context.pop();
+                } else {
+                  context.push('/progress/calendar');
+                }
+              },
             ),
           ),
         ),

@@ -3,12 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:fittrack/app/theme/app_colors.dart';
 import 'package:fittrack/app/theme/app_typography.dart';
+import 'package:fittrack/core/widgets/app_button.dart';
 import 'package:fittrack/core/widgets/app_card.dart';
 import 'package:fittrack/core/widgets/app_photo_image.dart';
 import 'package:fittrack/core/widgets/neumorphic_container.dart';
 import 'package:fittrack/features/auth/data/auth_repository.dart';
 import 'package:fittrack/features/progress_photos/data/progress_photo_repository.dart';
 import 'package:fittrack/features/workouts/data/workout_repository.dart';
+import 'package:fittrack/features/workouts/domain/workout.dart';
+import 'package:fittrack/core/utils/streak_calculator.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -41,6 +44,9 @@ class DashboardScreen extends ConsumerWidget {
         p.createdAt.year == now.year &&
         p.createdAt.month == now.month &&
         p.createdAt.day == now.day);
+
+    final realStreak = StreakCalculator.calculateStreak(workouts.map((w) => w.date));
+    final displayStreak = realStreak > 0 ? realStreak : (user?.workoutStreak ?? 0);
 
     return Scaffold(
       body: SafeArea(
@@ -103,7 +109,7 @@ class DashboardScreen extends ConsumerWidget {
                   Expanded(
                     child: _buildMetricCard(
                       'Day Streak',
-                      '${user?.workoutStreak ?? 0}',
+                      '$displayStreak',
                       Icons.local_fire_department_rounded,
                     ),
                   ),
@@ -216,41 +222,164 @@ class DashboardScreen extends ConsumerWidget {
               const SizedBox(height: 32),
 
               // This Week
-              const Text("This Week", style: AppTypography.labelLarge),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text("This Week", style: AppTypography.labelLarge),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '${workouts.where((w) {
+                        final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+                        final start = DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day);
+                        final end = start.add(const Duration(days: 7));
+                        return !w.date.isBefore(start) && w.date.isBefore(end);
+                      }).map((w) => '${w.date.year}-${w.date.month}-${w.date.day}').toSet().length} / ${(user?.preferredWorkoutDays.isNotEmpty ?? false) ? user!.preferredWorkoutDays.length : 4} completed',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 12),
               AppCard(
                 padding:
-                    const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+                    const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: ['M', 'T', 'W', 'T', 'F', 'S', 'S']
-                      .asMap()
-                      .entries
-                      .map((entry) {
-                    final isCompleted = entry.key <
-                        2; // Mocking slightly for visual, ideally calculated
-                    return Column(
-                      children: [
-                        Text(entry.value, style: AppTypography.labelMedium),
-                        const SizedBox(height: 12),
-                        NeumorphicContainer(
-                          width: 28,
-                          height: 28,
-                          shape: BoxShape.circle,
-                          style: isCompleted
-                              ? NeumorphicStyle.inset
-                              : NeumorphicStyle.flat,
-                          child: Icon(
-                            isCompleted ? Icons.check : Icons.circle_outlined,
-                            size: 16,
-                            color: isCompleted
-                                ? AppColors.primary
-                                : AppColors.divider,
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: List.generate(7, (index) {
+                    final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+                    final dayDate = DateTime(
+                        startOfWeek.year, startOfWeek.month, startOfWeek.day + index);
+                    final dayWorkouts = workouts.where((w) =>
+                        w.date.year == dayDate.year &&
+                        w.date.month == dayDate.month &&
+                        w.date.day == dayDate.day).toList();
+                    final isCompleted = dayWorkouts.isNotEmpty;
+                    final isToday = dayDate.year == now.year &&
+                        dayDate.month == now.month &&
+                        dayDate.day == now.day;
+                    final dayAbbrs = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+                    final daySingle = ['M', 'T', 'W', 'T', 'F', 'S', 'S'][index];
+                    final isPlanned = (user?.preferredWorkoutDays ??
+                            ['Mon', 'Tue', 'Thu', 'Fri'])
+                        .contains(dayAbbrs[index]);
+
+                    return Expanded(
+                      child: GestureDetector(
+                        onTap: () => _showDaySummaryModal(
+                          context,
+                          dayDate,
+                          dayWorkouts,
+                          isToday,
+                          isPlanned,
+                        ),
+                        behavior: HitTestBehavior.opaque,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 2, vertical: 8),
+                          margin: const EdgeInsets.symmetric(horizontal: 2),
+                          decoration: isToday
+                              ? BoxDecoration(
+                                  color: AppColors.primary.withOpacity(0.08),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: AppColors.primary.withOpacity(0.4),
+                                    width: 1.5,
+                                  ),
+                                )
+                              : null,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                daySingle,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: isToday
+                                      ? FontWeight.w800
+                                      : FontWeight.w600,
+                                  color: isToday
+                                      ? AppColors.primary
+                                      : AppColors.textSecondary,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                '${dayDate.day}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: isToday
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                  color: isToday
+                                      ? AppColors.primary
+                                      : AppColors.textMuted,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              NeumorphicContainer(
+                                width: 30,
+                                height: 30,
+                                shape: BoxShape.circle,
+                                style: isCompleted
+                                    ? NeumorphicStyle.inset
+                                    : NeumorphicStyle.flat,
+                                child: Center(
+                                  child: isCompleted
+                                      ? const Icon(Icons.check_rounded,
+                                          size: 16, color: AppColors.primary)
+                                      : (isToday
+                                          ? const Icon(Icons.add_rounded,
+                                              size: 15,
+                                              color: AppColors.primary)
+                                          : Icon(
+                                              isPlanned
+                                                  ? Icons.circle_outlined
+                                                  : Icons.remove_rounded,
+                                              size: 13,
+                                              color: AppColors.divider,
+                                            )),
+                                ),
+                              ),
+                              const SizedBox(height: 5),
+                              if (isToday)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 4, vertical: 1),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Text(
+                                    'TODAY',
+                                    style: TextStyle(
+                                      fontSize: 7,
+                                      fontWeight: FontWeight.w900,
+                                      color: Colors.white,
+                                      letterSpacing: 0.3,
+                                    ),
+                                  ),
+                                )
+                              else if (isCompleted)
+                                const Icon(Icons.check,
+                                    size: 9, color: AppColors.primary)
+                              else
+                                const SizedBox(height: 11),
+                            ],
                           ),
                         ),
-                      ],
+                      ),
                     );
-                  }).toList(),
+                  }),
                 ),
               ),
               const SizedBox(height: 32),
@@ -444,6 +573,173 @@ class DashboardScreen extends ConsumerWidget {
           const SizedBox(height: 12),
           Text(label, style: AppTypography.labelMedium),
         ],
+      ),
+    );
+  }
+
+  void _showDaySummaryModal(
+    BuildContext context,
+    DateTime date,
+    List<Workout> dayWorkouts,
+    bool isToday,
+    bool isPlannedWorkoutDay,
+  ) {
+    final months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    final dayNames = [
+      'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
+    ];
+    final dateStr =
+        '${dayNames[date.weekday - 1]}, ${months[date.month - 1]} ${date.day}';
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: const BoxDecoration(
+          color: AppColors.cardBackground,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.textMuted.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(dateStr, style: AppTypography.titleLarge),
+                    const SizedBox(height: 4),
+                    Text(
+                      isToday
+                          ? 'Today • ${dayWorkouts.isEmpty ? (isPlannedWorkoutDay ? "Scheduled Workout Day" : "Rest Day") : "${dayWorkouts.length} Session(s) Completed"}'
+                          : dayWorkouts.isEmpty
+                              ? (isPlannedWorkoutDay
+                                  ? 'Scheduled Training Day'
+                                  : 'Rest Day')
+                              : '${dayWorkouts.length} Workout(s) Completed',
+                      style: AppTypography.bodySmall.copyWith(
+                        color: dayWorkouts.isNotEmpty
+                            ? AppColors.primary
+                            : AppColors.textSecondary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                if (dayWorkouts.isNotEmpty)
+                  const NeumorphicContainer(
+                    shape: BoxShape.circle,
+                    padding: EdgeInsets.all(10),
+                    style: NeumorphicStyle.inset,
+                    child: Icon(Icons.check_circle_rounded,
+                        color: AppColors.primary, size: 24),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            if (dayWorkouts.isNotEmpty) ...[
+              ...dayWorkouts.map((w) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: AppCard(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          const NeumorphicContainer(
+                            shape: BoxShape.circle,
+                            padding: EdgeInsets.all(10),
+                            child: Icon(Icons.fitness_center_rounded,
+                                color: AppColors.primary, size: 20),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(w.title, style: AppTypography.titleMedium),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${w.exercises.length} exercises • ${w.durationMinutes} min • ${w.totalVolumeKg.toInt()} kg volume',
+                                  style: AppTypography.bodySmall,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )),
+              const SizedBox(height: 12),
+              AppButton(
+                label: 'Log Another Workout',
+                icon: Icons.add_rounded,
+                type: AppButtonType.secondary,
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  context.push('/workouts/new');
+                },
+              ),
+            ] else ...[
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  children: [
+                    Icon(
+                      isPlannedWorkoutDay
+                          ? Icons.fitness_center_outlined
+                          : Icons.bed_outlined,
+                      size: 40,
+                      color: AppColors.textMuted,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      isPlannedWorkoutDay
+                          ? (isToday
+                              ? 'No workout logged yet today!'
+                              : 'No workout recorded for this day.')
+                          : 'Marked as a rest day.',
+                      style: AppTypography.bodyMedium,
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              AppButton(
+                label: isToday
+                    ? 'Log Workout Now'
+                    : 'Log Workout for this Date',
+                icon: Icons.add_rounded,
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  context.push('/workouts/new');
+                },
+              ),
+            ],
+            const SizedBox(height: 12),
+          ],
+        ),
       ),
     );
   }

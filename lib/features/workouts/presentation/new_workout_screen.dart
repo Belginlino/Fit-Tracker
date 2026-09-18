@@ -9,6 +9,7 @@ import 'package:fittrack/core/widgets/neumorphic_container.dart';
 import 'package:fittrack/features/auth/data/auth_repository.dart';
 import '../data/workout_repository.dart';
 import '../domain/workout.dart';
+import 'package:fittrack/core/utils/streak_calculator.dart';
 
 class NewWorkoutScreen extends ConsumerStatefulWidget {
   final String? templateTitle;
@@ -58,15 +59,107 @@ class _NewWorkoutScreenState extends ConsumerState<NewWorkoutScreen> {
     super.dispose();
   }
 
+  final List<String> _popularExercises = const [
+    'Barbell Bench Press',
+    'Incline Dumbbell Press',
+    'Barbell Squat',
+    'Deadlift',
+    'Overhead Press',
+    'Pull-Ups',
+    'Barbell Row',
+    'Dumbbell Lateral Raise',
+    'Bicep Curl',
+    'Tricep Pushdown',
+    'Leg Press',
+    'Lat Pulldown',
+  ];
+
   void _addExercise() {
-    setState(() {
-      _exercises.add(
-        Exercise(
-          name: 'Exercise ${_exercises.length + 1}',
-          sets: const [WorkoutSet(setNumber: 1, weight: 20.0, reps: 10)],
+    _showExerciseSelectionDialog();
+  }
+
+  void _showExerciseSelectionDialog({int? editIndex}) {
+    final isEditing = editIndex != null;
+    final initialName = isEditing ? _exercises[editIndex].name : '';
+    final nameCtrl = TextEditingController(text: initialName);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardBackground,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(isEditing ? 'Edit Exercise' : 'Add Exercise',
+            style: AppTypography.titleLarge),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: 'Exercise Name',
+                  hintText: 'e.g. Bulgarian Split Squat',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text('Quick Select:', style: AppTypography.bodySmall),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _popularExercises.map((ex) {
+                  return ActionChip(
+                    label: Text(ex, style: const TextStyle(fontSize: 12)),
+                    backgroundColor: AppColors.surface,
+                    onPressed: () {
+                      nameCtrl.text = ex;
+                    },
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
         ),
-      );
-    });
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () {
+              final chosenName = nameCtrl.text.trim().isNotEmpty
+                  ? nameCtrl.text.trim()
+                  : (isEditing ? initialName : 'Exercise ${_exercises.length + 1}');
+              if (isEditing) {
+                setState(() {
+                  _exercises[editIndex] = _exercises[editIndex].copyWith(name: chosenName);
+                });
+              } else {
+                setState(() {
+                  _exercises.add(
+                    Exercise(
+                      name: chosenName,
+                      sets: const [WorkoutSet(setNumber: 1, weight: 20.0, reps: 10)],
+                    ),
+                  );
+                });
+              }
+              Navigator.pop(ctx);
+            },
+            child: Text(isEditing ? 'Update' : 'Add'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _addSet(int exerciseIndex) {
@@ -110,28 +203,34 @@ class _NewWorkoutScreenState extends ConsumerState<NewWorkoutScreen> {
   }
 
   Future<void> _finishWorkout() async {
+    if (_isSaving) return;
     setState(() => _isSaving = true);
     final authRepo = ref.read(authRepositoryProvider);
     final user = authRepo.currentUser;
     final workoutRepo = ref.read(workoutRepositoryProvider);
 
+    final now = DateTime.now();
     final workout = Workout(
-      id: 'workout-${DateTime.now().millisecondsSinceEpoch}',
+      id: 'workout-${now.millisecondsSinceEpoch}',
       userId: user?.id ?? 'user-local',
       title: _titleController.text.trim().isNotEmpty
           ? _titleController.text.trim()
           : 'Workout',
-      date: DateTime.now(),
+      date: now,
       durationMinutes: 45,
       exercises: _exercises,
     );
 
     await workoutRepo.saveWorkout(workout);
 
-    // Increment workout streak on profile
+    // Calculate accurate consecutive workout streak from all workouts
     if (user != null) {
+      final existingWorkouts = await workoutRepo.getWorkouts(user.id);
+      final allDates = [now, ...existingWorkouts.map((w) => w.date)];
+      final accurateStreak = StreakCalculator.calculateStreak(allDates);
+
       await authRepo.updateProfile(user.copyWith(
-        workoutStreak: user.workoutStreak + 1,
+        workoutStreak: accurateStreak,
       ));
     }
 
@@ -259,7 +358,25 @@ class _NewWorkoutScreenState extends ConsumerState<NewWorkoutScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(exercise.name, style: AppTypography.titleMedium),
+                Expanded(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () => _showExerciseSelectionDialog(editIndex: exIndex),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(exercise.name, style: AppTypography.titleMedium),
+                          ),
+                          const SizedBox(width: 8),
+                          const Icon(Icons.edit_outlined, size: 16, color: AppColors.textMuted),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
                 IconButton(
                   icon: const Icon(Icons.delete_outline_rounded,
                       size: 20, color: AppColors.textMuted),

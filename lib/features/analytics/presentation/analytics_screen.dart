@@ -1,12 +1,14 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:fittrack/app/theme/app_colors.dart';
 import 'package:fittrack/app/theme/app_typography.dart';
 import 'package:fittrack/core/widgets/app_card.dart';
 import 'package:fittrack/core/widgets/neumorphic_container.dart';
 import 'package:fittrack/features/auth/data/auth_repository.dart';
 import 'package:fittrack/features/workouts/data/workout_repository.dart';
+import 'package:fittrack/core/utils/streak_calculator.dart';
 
 class AnalyticsScreen extends ConsumerStatefulWidget {
   const AnalyticsScreen({super.key});
@@ -26,22 +28,57 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     final prsAsync = ref.watch(personalRecordsProvider(userId));
     final workoutsAsync = ref.watch(workoutsStreamProvider(userId));
 
-    final workoutStreak = user?.workoutStreak ?? 0;
+    final workouts = workoutsAsync.value ?? [];
+    final calculatedWorkoutStreak = StreakCalculator.calculateStreak(workouts.map((w) => w.date));
+    final workoutStreak = calculatedWorkoutStreak > 0
+        ? calculatedWorkoutStreak
+        : (user?.workoutStreak ?? 0);
     final photoStreak = user?.photoStreak ?? 0;
     final totalDays = workoutStreak + photoStreak;
     final score = (totalDays * 10).clamp(0, 100);
     final tier =
         score >= 80 ? 'Elite' : (score >= 40 ? 'Consistent' : 'Building');
 
-    final workouts = workoutsAsync.value ?? [];
-    double totalVol = 0;
-    for (final w in workouts) {
-      for (final ex in w.exercises) {
-        for (final s in ex.sets) {
-          totalVol += (s.weight * s.reps);
-        }
-      }
+    // Filter workouts by selected range
+    final now = DateTime.now();
+    DateTime? cutoff;
+    switch (_selectedRange) {
+      case '7D':
+        cutoff = now.subtract(const Duration(days: 7));
+        break;
+      case '30D':
+        cutoff = now.subtract(const Duration(days: 30));
+        break;
+      case '3M':
+        cutoff = now.subtract(const Duration(days: 90));
+        break;
+      case '6M':
+        cutoff = now.subtract(const Duration(days: 180));
+        break;
+      case '1Y':
+        cutoff = now.subtract(const Duration(days: 365));
+        break;
+      case 'ALL':
+      default:
+        cutoff = null;
+        break;
     }
+
+    final filteredWorkouts = cutoff == null
+        ? workouts
+        : workouts.where((w) => w.date.isAfter(cutoff!)).toList();
+
+    final sortedWorkouts = List.of(filteredWorkouts)
+      ..sort((a, b) => a.date.compareTo(b.date));
+
+    double totalVol = 0;
+    for (final w in sortedWorkouts) {
+      totalVol += w.totalVolumeKg;
+    }
+
+    final displaySessions = sortedWorkouts.length > 7
+        ? sortedWorkouts.sublist(sortedWorkouts.length - 7)
+        : sortedWorkouts;
 
     return Scaffold(
       appBar: AppBar(
@@ -149,32 +186,36 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
             const SizedBox(height: 32),
 
             // Weekly Volume Progression Chart
-            const Text('Training Volume (kg lifted)',
-                style: AppTypography.labelLarge),
+            Text(
+              'Training Volume (${totalVol.toInt()} kg in $_selectedRange)',
+              style: AppTypography.labelLarge,
+            ),
             const SizedBox(height: 16),
             AppCard(
               padding: const EdgeInsets.all(24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Total volume recorded across sessions',
-                      style: AppTypography.bodySmall),
+                  Text(
+                    'Volume recorded across ${displaySessions.length} session${displaySessions.length == 1 ? "" : "s"}',
+                    style: AppTypography.bodySmall,
+                  ),
                   const SizedBox(height: 20),
-                  if (workouts.isEmpty)
+                  if (displaySessions.isEmpty)
                     Container(
                       height: 120,
                       alignment: Alignment.center,
-                      child: const Column(
+                      child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.fitness_center_rounded,
+                          const Icon(Icons.fitness_center_rounded,
                               size: 32, color: AppColors.textMuted),
-                          SizedBox(height: 8),
-                          Text('No completed workout sessions yet',
+                          const SizedBox(height: 8),
+                          Text('No workouts in $_selectedRange',
                               style: AppTypography.bodyMedium),
-                          SizedBox(height: 4),
-                          Text(
-                              'Log your first workout to see training volume statistics',
+                          const SizedBox(height: 4),
+                          const Text(
+                              'Log a workout to see training volume progression',
                               style: AppTypography.bodySmall),
                         ],
                       ),
@@ -197,9 +238,9 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                             leftTitles: AxisTitles(
                               sideTitles: SideTitles(
                                 showTitles: true,
-                                reservedSize: 40,
+                                reservedSize: 42,
                                 getTitlesWidget: (val, meta) => Text(
-                                  val.toInt().toString(),
+                                  val >= 1000 ? '${(val / 1000).toStringAsFixed(1)}k' : val.toInt().toString(),
                                   style: const TextStyle(
                                       color: AppColors.textMuted, fontSize: 10),
                                 ),
@@ -209,13 +250,38 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                                 sideTitles: SideTitles(showTitles: false)),
                             topTitles: const AxisTitles(
                                 sideTitles: SideTitles(showTitles: false)),
-                            bottomTitles: const AxisTitles(
-                                sideTitles: SideTitles(showTitles: false)),
+                            bottomTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                getTitlesWidget: (val, meta) {
+                                  final idx = val.toInt();
+                                  if (idx >= 0 && idx < displaySessions.length) {
+                                    final date = displaySessions[idx].date;
+                                    return Padding(
+                                      padding: const EdgeInsets.only(top: 6),
+                                      child: Text(
+                                        DateFormat('M/d').format(date),
+                                        style: const TextStyle(
+                                          color: AppColors.textMuted,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                  return const SizedBox.shrink();
+                                },
+                              ),
+                            ),
                           ),
-                          barGroups: [
-                            _makeBarGroup(0, totalVol > 0 ? totalVol : 100,
-                                AppColors.primary),
-                          ],
+                          barGroups: displaySessions.asMap().entries.map((entry) {
+                            final vol = entry.value.totalVolumeKg;
+                            return _makeBarGroup(
+                              entry.key,
+                              vol > 0 ? vol : 10.0,
+                              AppColors.primary,
+                            );
+                          }).toList(),
                         ),
                       ),
                     ),

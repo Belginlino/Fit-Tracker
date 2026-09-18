@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:appwrite/appwrite.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fittrack/core/appwrite/appwrite_client.dart';
 import 'package:fittrack/core/appwrite/appwrite_config.dart';
 import '../domain/measurement.dart';
@@ -13,16 +15,26 @@ abstract class MeasurementRepository {
   Future<void> deleteMeasurement(String measurementId);
 }
 
-/// Appwrite Database implementation for Body Measurements
+/// Appwrite Database implementation for Body Measurements with local persistence
 class AppwriteMeasurementRepository implements MeasurementRepository {
   final _controller = StreamController<List<BodyMeasurement>>.broadcast();
   List<BodyMeasurement> _cache = [];
+  final Set<String> _loadedUsers = {};
 
   @override
   Stream<List<BodyMeasurement>> getMeasurementsStream(String userId,
-      {String? type}) {
-    _fetchAndEmit(userId, type: type);
-    return _controller.stream.map((list) {
+      {String? type}) async* {
+    if (_cache.isNotEmpty) {
+      if (type != null) {
+        yield _cache
+            .where((m) => m.type.toLowerCase() == type.toLowerCase())
+            .toList();
+      } else {
+        yield List.unmodifiable(_cache);
+      }
+    }
+    _initAndFetch(userId, type: type);
+    yield* _controller.stream.map((list) {
       if (type != null) {
         return list
             .where((m) => m.type.toLowerCase() == type.toLowerCase())
@@ -32,11 +44,48 @@ class AppwriteMeasurementRepository implements MeasurementRepository {
     });
   }
 
+  Future<void> _initAndFetch(String userId, {String? type}) async {
+    if (!_loadedUsers.contains(userId)) {
+      await _loadFromLocal(userId);
+    }
+    await _fetchAndEmit(userId, type: type);
+  }
+
+  Future<void> _loadFromLocal(String userId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'fittrack_measurements_${userId.isEmpty ? "default" : userId}';
+      final raw = prefs.getString(key);
+      if (raw != null && raw.isNotEmpty) {
+        final List<dynamic> list = jsonDecode(raw);
+        final loaded = list
+            .map((item) => BodyMeasurement.fromMap(
+                Map<String, dynamic>.from(item), item['id'] as String? ?? ''))
+            .toList();
+        if (loaded.isNotEmpty) {
+          _cache = loaded;
+          _controller.add(List.unmodifiable(_cache));
+        }
+      }
+      _loadedUsers.add(userId);
+    } catch (_) {}
+  }
+
+  Future<void> _saveToLocal(String userId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'fittrack_measurements_${userId.isEmpty ? "default" : userId}';
+      final raw = jsonEncode(_cache.map((m) => m.toMap()).toList());
+      await prefs.setString(key, raw);
+    } catch (_) {}
+  }
+
   Future<void> _fetchAndEmit(String userId, {String? type}) async {
     try {
       final records = await getMeasurements(userId, type: type);
       _cache = records;
       _controller.add(List.unmodifiable(_cache));
+      await _saveToLocal(userId);
     } catch (_) {
       _controller.add(List.unmodifiable(_cache));
     }
@@ -45,7 +94,9 @@ class AppwriteMeasurementRepository implements MeasurementRepository {
   @override
   Future<List<BodyMeasurement>> getMeasurements(String userId,
       {String? type}) async {
-    if (!AppwriteConfig.isConfigured) return [];
+    if (!AppwriteConfig.isConfigured || userId.isEmpty || userId == 'user-local') {
+      return _cache;
+    }
 
     try {
       final db = AppwriteClient.instance.databases;
@@ -76,7 +127,7 @@ class AppwriteMeasurementRepository implements MeasurementRepository {
           id: doc.$id,
           userId: item['user_id'] as String? ?? userId,
           type: formattedType,
-          value: (item['value'] as num).toDouble(),
+          value: (item['value'] as num?)?.toDouble() ?? 0.0,
           unit: item['unit'] as String? ?? 'kg',
           recordedAt: DateTime.tryParse(item['recorded_at'] as String? ?? '') ??
               DateTime.now(),
@@ -85,6 +136,7 @@ class AppwriteMeasurementRepository implements MeasurementRepository {
       }).toList();
 
       _cache = list;
+      await _saveToLocal(userId);
       return list;
     } catch (_) {
       return _cache;
@@ -96,6 +148,7 @@ class AppwriteMeasurementRepository implements MeasurementRepository {
     _cache.removeWhere((m) => m.id == measurement.id);
     _cache.insert(0, measurement);
     _controller.add(List.unmodifiable(_cache));
+    await _saveToLocal(measurement.userId);
 
     if (!AppwriteConfig.isConfigured) return;
 
@@ -139,8 +192,12 @@ class AppwriteMeasurementRepository implements MeasurementRepository {
 
   @override
   Future<void> deleteMeasurement(String measurementId) async {
+    final uid = _cache.isNotEmpty ? _cache.first.userId : '';
     _cache.removeWhere((m) => m.id == measurementId);
     _controller.add(List.unmodifiable(_cache));
+    if (uid.isNotEmpty) {
+      await _saveToLocal(uid);
+    }
 
     if (!AppwriteConfig.isConfigured) return;
 

@@ -12,6 +12,7 @@ import 'package:fittrack/core/widgets/app_photo_image.dart';
 import 'package:fittrack/features/auth/data/auth_repository.dart';
 import '../data/progress_photo_repository.dart';
 import '../domain/progress_photo.dart';
+import 'package:fittrack/core/utils/streak_calculator.dart';
 
 class PhotoItem {
   final String path;
@@ -222,8 +223,12 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
     }
 
     if (user != null) {
+      final existingPhotos = await photoRepo.getPhotos(user.id);
+      final allPhotoDates = [_selectedDate, ...existingPhotos.map((p) => p.createdAt)];
+      final accurateStreak = StreakCalculator.calculateStreak(allPhotoDates);
+
       await authRepo.updateProfile(user.copyWith(
-        photoStreak: (user.photoStreak) + _photos.length,
+        photoStreak: accurateStreak,
         currentWeight: currentWeight,
       ));
     }

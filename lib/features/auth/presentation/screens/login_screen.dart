@@ -84,6 +84,117 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
+  Future<void> _handleForgotPassword() async {
+    final emailCtrl = TextEditingController(text: _emailController.text.trim());
+    bool isResetting = false;
+    String? resetError;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: AppColors.cardBackground,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            children: [
+              Icon(Icons.lock_reset_rounded, color: AppColors.primary),
+              SizedBox(width: 8),
+              Text('Reset Password', style: TextStyle(fontSize: 18)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Enter your account email to receive password reset instructions.',
+                style: AppTypography.bodySmall,
+              ),
+              const SizedBox(height: 16),
+              AppTextField(
+                label: 'Email Address',
+                hint: 'athlete@example.com',
+                controller: emailCtrl,
+                keyboardType: TextInputType.emailAddress,
+                prefixIcon: const Icon(Icons.email_outlined,
+                    color: AppColors.textMuted, size: 20),
+              ),
+              if (resetError != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  resetError!,
+                  style: const TextStyle(color: AppColors.error, fontSize: 12),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: isResetting ? null : () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel',
+                  style: TextStyle(color: AppColors.textSecondary)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: isResetting
+                  ? null
+                  : () async {
+                      final email = emailCtrl.text.trim();
+                      if (email.isEmpty || !email.contains('@')) {
+                        setDialogState(
+                            () => resetError = 'Please enter a valid email');
+                        return;
+                      }
+                      setDialogState(() {
+                        isResetting = true;
+                        resetError = null;
+                      });
+                      try {
+                        await ref
+                            .read(authRepositoryProvider)
+                            .sendPasswordReset(email);
+                        if (ctx.mounted) Navigator.of(ctx).pop();
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                  'Password recovery email sent to $email ✓'),
+                              backgroundColor: AppColors.success,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        setDialogState(() {
+                          isResetting = false;
+                          String msg = e.toString();
+                          if (msg.startsWith('Exception: ')) {
+                            msg = msg.substring(11);
+                          }
+                          resetError = msg;
+                        });
+                      }
+                    },
+              child: isResetting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Text('Send Reset Link'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _togglePinProtection(bool enable) async {
     final pinNotifier = ref.read(pinServiceProvider.notifier);
     if (!enable) {
@@ -322,7 +433,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton(
-                      onPressed: () {},
+                      onPressed: _handleForgotPassword,
                       child: Text(
                         'Forgot Password?',
                         style: AppTypography.bodySmall.copyWith(

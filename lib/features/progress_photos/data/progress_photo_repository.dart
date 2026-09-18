@@ -240,8 +240,6 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
     if (!AppwriteConfig.isConfigured || photo.userId == 'user-local') return;
 
     final permissions = [
-      Permission.read(Role.any()),
-      Permission.read(Role.users()),
       Permission.read(Role.user(photo.userId)),
       Permission.update(Role.user(photo.userId)),
       Permission.delete(Role.user(photo.userId)),

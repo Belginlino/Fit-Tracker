@@ -22,6 +22,8 @@ import '../core/services/pin_service.dart';
 import '../features/auth/data/auth_repository.dart';
 import '../features/auth/presentation/screens/pin_lock_screen.dart';
 
+import '../features/auth/presentation/screens/splash_screen.dart';
+
 class RouterNotifier extends ChangeNotifier {
   final Ref _ref;
 
@@ -39,28 +41,41 @@ final routerProvider = Provider<GoRouter>((ref) {
   final notifier = ref.watch(routerNotifierProvider);
 
   return GoRouter(
-    initialLocation: '/login',
+    initialLocation: '/splash',
     refreshListenable: notifier,
     redirect: (context, state) {
       final authRepo = ref.read(authRepositoryProvider);
-      final isLoggedIn = authRepo.currentUser != null;
-
-      final pinState = ref.read(pinServiceProvider);
       final currentLoc = state.matchedLocation;
-      final isAuthRoute =
-          currentLoc == '/login' || currentLoc == '/register';
 
-      // 1. If not logged in, enforce login/register
-      if (!isLoggedIn) {
-        return isAuthRoute ? null : '/login';
+      // While verifying session on startup, allow splash screen
+      if (!authRepo.isInitialized && currentLoc == '/splash') {
+        return null;
       }
 
-      // 2. If logged in, check PIN protection
+      final user = authRepo.currentUser;
+      final isLoggedIn = user != null;
+      final pinState = ref.read(pinServiceProvider);
+      final isAuthRoute =
+          currentLoc == '/login' || currentLoc == '/register' || currentLoc == '/splash';
+
+      // 1. If not logged in, enforce login or register
+      if (!isLoggedIn) {
+        return (currentLoc == '/login' || currentLoc == '/register')
+            ? null
+            : '/login';
+      }
+
+      // 2. If logged in but hasn't completed onboarding, enforce onboarding
+      if (!user.hasCompletedOnboarding) {
+        return currentLoc == '/onboarding' ? null : '/onboarding';
+      }
+
+      // 3. If logged in and PIN protection is enabled but locked, enforce pin-lock
       if (pinState.isPinEnabled && !pinState.isUnlocked) {
         return currentLoc == '/pin-lock' ? null : '/pin-lock';
       }
 
-      // 3. If logged in and unlocked (or no PIN), prevent staying on auth or pin-lock
+      // 4. If logged in, unlocked, and completed onboarding, prevent staying on auth, splash, or pin-lock
       if (isAuthRoute || currentLoc == '/pin-lock') {
         return '/home';
       }
@@ -68,6 +83,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
+      // Splash Screen Route
+      GoRoute(
+        path: '/splash',
+        builder: (context, state) => const SplashScreen(),
+      ),
+
       // Auth & Onboarding Routes
       GoRoute(
         path: '/login',

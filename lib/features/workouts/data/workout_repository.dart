@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:appwrite/appwrite.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'package:fittrack/core/appwrite/appwrite_client.dart';
 import 'package:fittrack/core/appwrite/appwrite_config.dart';
@@ -14,15 +16,55 @@ abstract class WorkoutRepository {
   Future<Map<String, double>> getPersonalRecords(String userId);
 }
 
-/// Appwrite Database implementation for Workouts, Exercises, Sets, and PRs
+/// Appwrite Database implementation for Workouts, Exercises, Sets, and PRs with local persistence
 class AppwriteWorkoutRepository implements WorkoutRepository {
   final _controller = StreamController<List<Workout>>.broadcast();
   List<Workout> _cache = [];
+  final Set<String> _loadedUsers = {};
 
   @override
-  Stream<List<Workout>> getWorkoutsStream(String userId) {
-    _fetchAndEmit(userId);
-    return _controller.stream;
+  Stream<List<Workout>> getWorkoutsStream(String userId) async* {
+    if (_cache.isNotEmpty) {
+      yield List.unmodifiable(_cache);
+    }
+    _initAndFetch(userId);
+    yield* _controller.stream;
+  }
+
+  Future<void> _initAndFetch(String userId) async {
+    if (!_loadedUsers.contains(userId)) {
+      await _loadFromLocal(userId);
+    }
+    await _fetchAndEmit(userId);
+  }
+
+  Future<void> _loadFromLocal(String userId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'fittrack_workouts_${userId.isEmpty ? "default" : userId}';
+      final raw = prefs.getString(key);
+      if (raw != null && raw.isNotEmpty) {
+        final List<dynamic> list = jsonDecode(raw);
+        final loaded = list
+            .map((item) => Workout.fromMap(
+                Map<String, dynamic>.from(item), item['id'] as String? ?? ''))
+            .toList();
+        if (loaded.isNotEmpty) {
+          _cache = loaded;
+          _controller.add(List.unmodifiable(_cache));
+        }
+      }
+      _loadedUsers.add(userId);
+    } catch (_) {}
+  }
+
+  Future<void> _saveToLocal(String userId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'fittrack_workouts_${userId.isEmpty ? "default" : userId}';
+      final raw = jsonEncode(_cache.map((w) => w.toMap()).toList());
+      await prefs.setString(key, raw);
+    } catch (_) {}
   }
 
   Future<void> _fetchAndEmit(String userId) async {
@@ -30,6 +72,7 @@ class AppwriteWorkoutRepository implements WorkoutRepository {
       final workouts = await getWorkouts(userId);
       _cache = workouts;
       _controller.add(List.unmodifiable(_cache));
+      await _saveToLocal(userId);
     } catch (_) {
       _controller.add(List.unmodifiable(_cache));
     }
@@ -37,7 +80,9 @@ class AppwriteWorkoutRepository implements WorkoutRepository {
 
   @override
   Future<List<Workout>> getWorkouts(String userId) async {
-    if (!AppwriteConfig.isConfigured) return [];
+    if (!AppwriteConfig.isConfigured || userId.isEmpty || userId == 'user-local') {
+      return _cache;
+    }
 
     try {
       final db = AppwriteClient.instance.databases;
@@ -51,55 +96,59 @@ class AppwriteWorkoutRepository implements WorkoutRepository {
         ],
       );
 
-      final workouts = <Workout>[];
+      if (response.documents.isEmpty) {
+        return _cache;
+      }
 
+      // Batch query exercises and sets for the user (3 requests instead of 1 + 2*N)
+      final exDocs = await db.listDocuments(
+        databaseId: AppwriteConfig.databaseId,
+        collectionId: AppwriteConfig.workoutExercisesCollection,
+        queries: [
+          Query.equal('user_id', userId),
+          Query.orderAsc('exercise_order'),
+          Query.limit(200),
+        ],
+      );
+
+      final setsDocs = await db.listDocuments(
+        databaseId: AppwriteConfig.databaseId,
+        collectionId: AppwriteConfig.workoutSetsCollection,
+        queries: [
+          Query.equal('user_id', userId),
+          Query.orderAsc('set_number'),
+          Query.limit(500),
+        ],
+      );
+
+      // Group sets by workout_exercise_id
+      final setsByExId = <String, List<WorkoutSet>>{};
+      for (final sDoc in setsDocs.documents) {
+        final exId = sDoc.data['workout_exercise_id'] as String? ?? '';
+        final s = WorkoutSet(
+          setNumber: (sDoc.data['set_number'] as num?)?.toInt() ?? 1,
+          weight: (sDoc.data['weight'] as num?)?.toDouble() ?? 0.0,
+          reps: (sDoc.data['reps'] as num?)?.toInt() ?? 0,
+          isCompleted: sDoc.data['is_completed'] as bool? ?? true,
+        );
+        setsByExId.putIfAbsent(exId, () => []).add(s);
+      }
+
+      // Group exercises by workout_id
+      final exercisesByWorkoutId = <String, List<Exercise>>{};
+      for (final eDoc in exDocs.documents) {
+        final wId = eDoc.data['workout_id'] as String? ?? '';
+        final ex = Exercise(
+          name: eDoc.data['exercise_name'] as String? ?? 'Exercise',
+          sets: setsByExId[eDoc.$id] ?? [],
+        );
+        exercisesByWorkoutId.putIfAbsent(wId, () => []).add(ex);
+      }
+
+      final workouts = <Workout>[];
       for (final doc in response.documents) {
         final workoutId = doc.$id;
         final data = doc.data;
-
-        // Fetch exercises for this workout
-        List<Exercise> exercises = [];
-        try {
-          final exDocs = await db.listDocuments(
-            databaseId: AppwriteConfig.databaseId,
-            collectionId: AppwriteConfig.workoutExercisesCollection,
-            queries: [
-              Query.equal('workout_id', workoutId),
-              Query.orderAsc('exercise_order'),
-            ],
-          );
-
-          // Fetch all sets for this workout
-          final setsDocs = await db.listDocuments(
-            databaseId: AppwriteConfig.databaseId,
-            collectionId: AppwriteConfig.workoutSetsCollection,
-            queries: [
-              Query.equal('workout_id', workoutId),
-              Query.orderAsc('set_number'),
-            ],
-          );
-
-          final setsByExId = <String, List<WorkoutSet>>{};
-          for (final sDoc in setsDocs.documents) {
-            final exId = sDoc.data['workout_exercise_id'] as String? ?? '';
-            final s = WorkoutSet(
-              setNumber: (sDoc.data['set_number'] as num?)?.toInt() ?? 1,
-              weight: (sDoc.data['weight'] as num?)?.toDouble() ?? 0.0,
-              reps: (sDoc.data['reps'] as num?)?.toInt() ?? 0,
-              isCompleted: sDoc.data['is_completed'] as bool? ?? true,
-            );
-            setsByExId.putIfAbsent(exId, () => []).add(s);
-          }
-
-          exercises = exDocs.documents.map((eDoc) {
-            final exId = eDoc.$id;
-            return Exercise(
-              name: eDoc.data['exercise_name'] as String? ?? 'Exercise',
-              sets: setsByExId[exId] ?? [],
-            );
-          }).toList();
-        } catch (_) {}
-
         workouts.add(
           Workout(
             id: workoutId,
@@ -109,13 +158,14 @@ class AppwriteWorkoutRepository implements WorkoutRepository {
                 DateTime.now(),
             durationMinutes:
                 (data['duration_minutes'] as num?)?.toInt() ?? 45,
-            exercises: exercises,
+            exercises: exercisesByWorkoutId[workoutId] ?? [],
             notes: data['notes'] as String?,
           ),
         );
       }
 
       _cache = workouts;
+      await _saveToLocal(userId);
       return workouts;
     } catch (_) {
       return _cache;
@@ -127,6 +177,7 @@ class AppwriteWorkoutRepository implements WorkoutRepository {
     _cache.removeWhere((w) => w.id == workout.id);
     _cache.insert(0, workout);
     _controller.add(List.unmodifiable(_cache));
+    await _saveToLocal(workout.userId);
 
     if (!AppwriteConfig.isConfigured) return;
 
@@ -287,8 +338,12 @@ class AppwriteWorkoutRepository implements WorkoutRepository {
 
   @override
   Future<void> deleteWorkout(String workoutId) async {
+    final uid = _cache.isNotEmpty ? _cache.first.userId : '';
     _cache.removeWhere((w) => w.id == workoutId);
     _controller.add(List.unmodifiable(_cache));
+    if (uid.isNotEmpty) {
+      await _saveToLocal(uid);
+    }
 
     if (!AppwriteConfig.isConfigured) return;
 

@@ -89,6 +89,11 @@ class _AppPhotoImageState extends State<AppPhotoImage> {
     if (_extractedFileId != null &&
         _bytesCache.containsKey(_extractedFileId)) {
       _loadedBytes = _bytesCache[_extractedFileId];
+    } else if (_extractedFileId != null &&
+        (widget.localPath == null || widget.localPath!.isEmpty)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _fetchViaAppwriteSdk();
+      });
     }
   }
 

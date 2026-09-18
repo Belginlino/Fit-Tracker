@@ -74,12 +74,24 @@ class _WeightTrackerScreenState extends ConsumerState<WeightTrackerScreen> {
                         ),
                         onPressed: () async {
                           final weightVal =
-                              double.tryParse(_weightInputController.text);
-                          if (weightVal != null) {
-                            final user = ref.read(currentUserProfileProvider);
-                            final repo =
-                                ref.read(measurementRepositoryProvider);
-                            final authRepo = ref.read(authRepositoryProvider);
+                              double.tryParse(_weightInputController.text.trim());
+                          if (weightVal == null ||
+                              weightVal.isNaN ||
+                              weightVal.isInfinite ||
+                              weightVal <= 20.0 ||
+                              weightVal >= 400.0) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                    'Please enter a valid weight between 20 and 400 kg'),
+                                backgroundColor: AppColors.error,
+                              ),
+                            );
+                            return;
+                          }
+                          final user = ref.read(currentUserProfileProvider);
+                          final repo = ref.read(measurementRepositoryProvider);
+                          final authRepo = ref.read(authRepositoryProvider);
 
                             final newEntry = BodyMeasurement(
                               id: 'w-${DateTime.now().millisecondsSinceEpoch}',
@@ -96,7 +108,6 @@ class _WeightTrackerScreenState extends ConsumerState<WeightTrackerScreen> {
                                   user.copyWith(currentWeight: weightVal));
                             }
                             if (mounted) Navigator.pop(ctx);
-                          }
                         },
                         child: const Text('Save',
                             style: TextStyle(fontWeight: FontWeight.w700)),
