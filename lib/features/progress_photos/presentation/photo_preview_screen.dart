@@ -61,6 +61,8 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
   bool _isDeleting = false;
   final ImagePicker _picker = ImagePicker();
 
+  DateTime? _baselineDate;
+
   @override
   void initState() {
     super.initState();
@@ -84,6 +86,37 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
     _weightController =
         TextEditingController(text: initialWeight.toStringAsFixed(1));
     _notesController = TextEditingController(text: widget.initialNotes ?? '');
+
+    Future.microtask(() => _initBaseline());
+  }
+
+  Future<void> _initBaseline() async {
+    final user = ref.read(currentUserProfileProvider);
+    final repo = ref.read(progressPhotoRepositoryProvider);
+    final photos = await repo.getPhotos(user?.id ?? 'user-local');
+    if (photos.isNotEmpty && mounted) {
+      final earliest = photos
+          .map((p) => p.createdAt)
+          .reduce((a, b) => a.isBefore(b) ? a : b);
+      setState(() {
+        _baselineDate = DateTime(earliest.year, earliest.month, earliest.day);
+      });
+    } else if (mounted) {
+      setState(() {
+        _baselineDate =
+            DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+      });
+    }
+  }
+
+  void _setDay(int newDay, {bool updateDate = false}) {
+    if (newDay < 1) return;
+    setState(() {
+      _selectedDay = newDay;
+      if (updateDate && _baselineDate != null) {
+        _selectedDate = _baselineDate!.add(Duration(days: newDay - 1));
+      }
+    });
   }
 
   @override
@@ -119,29 +152,26 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
       },
     );
     if (picked != null && mounted) {
+      final user = ref.read(currentUserProfileProvider);
+      final repo = ref.read(progressPhotoRepositoryProvider);
+      final photos = await repo.getPhotos(user?.id ?? 'user-local');
+      DateTime base =
+          _baselineDate ?? DateTime(picked.year, picked.month, picked.day);
+      if (photos.isNotEmpty) {
+        final earliest = photos
+            .map((p) => p.createdAt)
+            .reduce((a, b) => a.isBefore(b) ? a : b);
+        base = DateTime(earliest.year, earliest.month, earliest.day);
+      }
+      final diff = DateTime(picked.year, picked.month, picked.day)
+              .difference(base)
+              .inDays +
+          1;
+
       setState(() {
         _selectedDate = picked;
-        // If recording a new photo, automatically suggest day number based on baseline date
-        if (!widget.isViewingExisting) {
-          final user = ref.read(currentUserProfileProvider);
-          if (user != null) {
-            final photos =
-                ref.read(progressPhotosStreamProvider(user.id)).value ?? [];
-            if (photos.isNotEmpty) {
-              final baseline = photos
-                  .map((p) => p.createdAt)
-                  .reduce((a, b) => a.isBefore(b) ? a : b);
-              final diff = DateTime(picked.year, picked.month, picked.day)
-                      .difference(DateTime(
-                          baseline.year, baseline.month, baseline.day))
-                      .inDays +
-                  1;
-              if (diff >= 1) {
-                _selectedDay = diff;
-              }
-            }
-          }
-        }
+        _baselineDate = base;
+        _selectedDay = diff >= 1 ? diff : 1;
       });
     }
   }
@@ -187,7 +217,7 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
       ),
     );
     if (result != null && mounted) {
-      setState(() => _selectedDay = result);
+      _setDay(result, updateDate: true);
     }
   }
 
@@ -368,6 +398,11 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
           currentPath != existing?.localFilePath &&
           currentPath != existing?.downloadUrl;
 
+      final baseNotes = _notesController.text.trim();
+      final notesWithDay = baseNotes.isNotEmpty
+          ? '[Day $_selectedDay] $baseNotes'
+          : '[Day $_selectedDay]';
+
       final updatedPhoto = ProgressPhoto(
         id: widget.photoId!,
         userId: userId,
@@ -382,15 +417,18 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
         dayNumber: _selectedDay,
         pose: currentItem?.pose ?? widget.initialPose,
         weightAtCapture: currentWeight,
-        notes: _notesController.text.trim().isNotEmpty
-            ? _notesController.text.trim()
-            : null,
+        notes: notesWithDay,
         workoutId: existing?.workoutId,
       );
 
       await photoRepo.savePhoto(updatedPhoto);
     } else {
       // SAVE NEW PHOTOS: Create new entries for new session
+      final baseNotes = _notesController.text.trim();
+      final notesWithDay = baseNotes.isNotEmpty
+          ? '[Day $_selectedDay] $baseNotes'
+          : '[Day $_selectedDay]';
+
       for (int i = 0; i < _photos.length; i++) {
         final p = _photos[i];
         final timestamp = DateTime.now().millisecondsSinceEpoch + i;
@@ -403,14 +441,14 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
           dayNumber: _selectedDay,
           pose: p.pose,
           weightAtCapture: currentWeight,
-          notes: _notesController.text.trim().isNotEmpty
-              ? _notesController.text.trim()
-              : null,
+          notes: notesWithDay,
         );
 
         await photoRepo.savePhoto(newPhoto);
       }
     }
+
+    ref.invalidate(progressPhotosStreamProvider(userId));
 
     if (user != null) {
       final existingPhotos = await photoRepo.getPhotos(user.id);
@@ -835,102 +873,159 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Day Stepper Row
+                    // Header
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                const Text('Transformation Day',
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.bold,
-                                      color: AppColors.textPrimary,
-                                    )),
-                                const SizedBox(width: 8),
-                                if (_selectedDay == 1)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 7, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFD97706),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: const Text(
-                                      '★ Baseline',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ),
-                              ],
+                        const Text('Transformation Day',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                            )),
+                        const SizedBox(width: 8),
+                        if (_selectedDay == 1)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFD97706),
+                              borderRadius: BorderRadius.circular(6),
                             ),
-                            const SizedBox(height: 2),
-                            Text(
-                              _selectedDay == 1
-                                  ? 'Day 1 is your starting baseline'
-                                  : 'Day $_selectedDay milestone of your journey',
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: AppColors.textSecondary,
+                            child: const Text(
+                              '★ Baseline',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
                               ),
                             ),
-                          ],
-                        ),
-                        // Stepper (- / +)
-                        Row(
-                          children: [
-                            GestureDetector(
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _selectedDay == 1
+                          ? 'Day 1 is your baseline starting point'
+                          : 'Day $_selectedDay milestone of your fitness journey',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Dedicated Stepper Bar
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          // Decrement button
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(12),
                               onTap: () {
                                 if (_selectedDay > 1) {
-                                  setState(() => _selectedDay--);
+                                  _setDay(_selectedDay - 1, updateDate: true);
                                 }
                               },
-                              child: const NeumorphicContainer(
-                                width: 34,
-                                height: 34,
-                                shape: BoxShape.circle,
-                                child: Icon(Icons.remove,
-                                    size: 16, color: AppColors.primary),
-                              ),
-                            ),
-                            GestureDetector(
-                              onTap: _showCustomDayDialog,
                               child: Container(
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 12),
-                                child: Text(
-                                  'Day $_selectedDay',
-                                  style: const TextStyle(
-                                    color: AppColors.primary,
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 16,
-                                  ),
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: _selectedDay > 1
+                                      ? AppColors.primary
+                                          .withValues(alpha: 0.12)
+                                      : Colors.grey.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Icon(
+                                  Icons.remove_rounded,
+                                  color: _selectedDay > 1
+                                      ? AppColors.primary
+                                      : AppColors.textMuted,
+                                  size: 22,
                                 ),
                               ),
                             ),
-                            GestureDetector(
+                          ),
+                          // Day Display (Clickable to edit)
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: _showCustomDayDialog,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'Day $_selectedDay',
+                                      style: const TextStyle(
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.w800,
+                                        color: AppColors.primary,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    const Icon(Icons.edit_outlined,
+                                        size: 14,
+                                        color: AppColors.textSecondary),
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _selectedDay == 1
+                                      ? '★ Baseline Day'
+                                      : DateFormat('EEE, MMM d, yyyy')
+                                          .format(_selectedDate),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: _selectedDay == 1
+                                        ? const Color(0xFFD97706)
+                                        : AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          // Increment button
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(12),
                               onTap: () {
-                                setState(() => _selectedDay++);
+                                _setDay(_selectedDay + 1, updateDate: true);
                               },
-                              child: const NeumorphicContainer(
-                                width: 34,
-                                height: 34,
-                                shape: BoxShape.circle,
-                                child: Icon(Icons.add,
-                                    size: 16, color: AppColors.primary),
+                              child: Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary
+                                      .withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(
+                                  Icons.add_rounded,
+                                  color: AppColors.primary,
+                                  size: 22,
+                                ),
                               ),
                             ),
-                          ],
-                        ),
-                      ],
+                          ),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 14),
+
                     // Quick Milestone Preset Chips
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
@@ -940,10 +1035,10 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
                           return Padding(
                             padding: const EdgeInsets.only(right: 8),
                             child: GestureDetector(
-                              onTap: () => setState(() => _selectedDay = d),
+                              onTap: () => _setDay(d, updateDate: true),
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 11, vertical: 6),
+                                    horizontal: 12, vertical: 7),
                                 decoration: BoxDecoration(
                                   color: isSelected
                                       ? AppColors.primary
@@ -953,6 +1048,7 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
                                     color: isSelected
                                         ? AppColors.primary
                                         : AppColors.border,
+                                    width: isSelected ? 1.5 : 1.0,
                                   ),
                                 ),
                                 child: Text(
@@ -963,8 +1059,8 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
                                         : AppColors.textPrimary,
                                     fontWeight: isSelected
                                         ? FontWeight.w800
-                                        : FontWeight.w500,
-                                    fontSize: 11,
+                                        : FontWeight.w600,
+                                    fontSize: 12,
                                   ),
                                 ),
                               ),
@@ -976,8 +1072,10 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
                     const SizedBox(height: 14),
                     const Divider(color: AppColors.border, height: 1),
                     const SizedBox(height: 12),
+
                     // Recorded Date Row
                     GestureDetector(
+                      behavior: HitTestBehavior.opaque,
                       onTap: _pickDate,
                       child: Row(
                         children: [
@@ -1003,7 +1101,7 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
                           ),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 5),
+                                horizontal: 10, vertical: 6),
                             decoration: BoxDecoration(
                               color: AppColors.primary.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(8),
@@ -1015,7 +1113,7 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
                                     size: 15, color: AppColors.primary),
                                 SizedBox(width: 4),
                                 Text(
-                                  'Change',
+                                  'Change Date',
                                   style: TextStyle(
                                     color: AppColors.primary,
                                     fontWeight: FontWeight.bold,

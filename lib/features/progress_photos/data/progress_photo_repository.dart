@@ -78,12 +78,11 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
           if (local != null) {
             return remote.copyWith(
               localFilePath: local.localFilePath ?? remote.localFilePath,
-              notes: (remote.notes != null && remote.notes!.isNotEmpty)
-                  ? remote.notes
-                  : local.notes,
-              pose: remote.pose != 'Front' ? remote.pose : local.pose,
-              weightAtCapture: remote.weightAtCapture ?? local.weightAtCapture,
-              dayNumber: remote.dayNumber ?? local.dayNumber,
+              notes: local.notes ?? remote.notes,
+              pose: local.pose,
+              weightAtCapture: local.weightAtCapture ?? remote.weightAtCapture,
+              dayNumber: local.dayNumber ?? remote.dayNumber,
+              createdAt: local.createdAt,
             );
           }
           return remote;
@@ -296,6 +295,7 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
 
     // 2. Save metadata in Appwrite Databases if collection exists
     try {
+      final formattedNotes = photo.toMap()['notes'] as String? ?? photo.notes ?? '';
       final docData = {
         'user_id': photo.userId,
         'file_id': fileId,
@@ -303,7 +303,7 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
         'pose': photo.pose,
         'workout_id': photo.workoutId ?? '',
         'weight_at_capture': photo.weightAtCapture ?? 0.0,
-        'notes': photo.notes ?? '',
+        'notes': formattedNotes,
         'day_number': photo.effectiveDayNumber,
         'created_at': photo.createdAt.toIso8601String(),
       };
@@ -324,6 +324,28 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
               documentId: photo.id,
               data: docData,
               permissions: permissions,
+            );
+          } catch (_) {
+            final fallback = Map<String, dynamic>.from(docData)..remove('day_number');
+            try {
+              await AppwriteClient.instance.databases.createDocument(
+                databaseId: AppwriteConfig.databaseId,
+                collectionId: AppwriteConfig.progressPhotosCollection,
+                documentId: photo.id,
+                data: fallback,
+                permissions: permissions,
+              );
+            } catch (_) {}
+          }
+        } else {
+          // If error 400 (e.g. unknown attribute day_number), retry update without day_number
+          final fallback = Map<String, dynamic>.from(docData)..remove('day_number');
+          try {
+            await AppwriteClient.instance.databases.updateDocument(
+              databaseId: AppwriteConfig.databaseId,
+              collectionId: AppwriteConfig.progressPhotosCollection,
+              documentId: photo.id,
+              data: fallback,
             );
           } catch (_) {}
         }
