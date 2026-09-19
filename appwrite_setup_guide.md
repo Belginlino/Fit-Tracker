@@ -169,10 +169,12 @@ Now create the following **7 Collections**:
 | `workout_id` | String | 64 | No | null |
 | `weight_at_capture` | Float | - | No | null |
 | `notes` | String | 2048 | No | null |
+| `day_number` | Integer | - | No | 1 |
 | `created_at` | Datetime / String | 64 | Yes | - |
 
 **Indexes**:
 - Key: `idx_photos_user_date` | Type: Key | Attributes: `user_id` (ASC), `created_at` (DESC)
+- Key: `idx_photos_user_day` | Type: Key | Attributes: `user_id` (ASC), `day_number` (ASC)
 
 ---
 

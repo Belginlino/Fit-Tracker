@@ -31,12 +31,14 @@ CREATE TABLE IF NOT EXISTS progress_photos (
   workout_id TEXT,
   weight_at_capture REAL,
   notes TEXT,
+  day_number INTEGER DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_photos_user_date ON progress_photos(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_photos_user_pose ON progress_photos(user_id, pose);
+CREATE INDEX IF NOT EXISTS idx_photos_user_day ON progress_photos(user_id, day_number);
 
 -- Workouts Table
 CREATE TABLE IF NOT EXISTS workouts (

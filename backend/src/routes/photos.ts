@@ -35,6 +35,7 @@ export async function handlePhotoRoutes(
       workoutId: row.workout_id,
       weightAtCapture: row.weight_at_capture,
       notes: row.notes,
+      dayNumber: row.day_number ?? 1,
       createdAt: row.created_at,
     }));
 
@@ -74,14 +75,16 @@ export async function handlePhotoRoutes(
   // POST /api/photos - Record photo metadata in D1
   if (path === '/api/photos' && method === 'POST') {
     const body = await request.json() as any;
-    const { id, objectKey, pose, workoutId, weightAtCapture, notes } = body;
+    const { id, objectKey, pose, workoutId, weightAtCapture, notes, dayNumber, createdAt } = body;
 
     const photoId = id || `photo-${Date.now()}`;
     const key = objectKey || `users/${user.id}/progress/${photoId}.jpg`;
+    const photoDay = dayNumber ? Number(dayNumber) : 1;
+    const photoDate = createdAt || new Date().toISOString();
 
     await env.DB.prepare(`
-      INSERT INTO progress_photos (id, user_id, r2_object_key, pose, workout_id, weight_at_capture, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO progress_photos (id, user_id, r2_object_key, pose, workout_id, weight_at_capture, notes, day_number, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       photoId,
       user.id,
@@ -89,7 +92,9 @@ export async function handlePhotoRoutes(
       pose || 'Front',
       workoutId || null,
       weightAtCapture || null,
-      notes || null
+      notes || null,
+      photoDay,
+      photoDate
     ).run();
 
     // Increment user photo streak
@@ -107,7 +112,8 @@ export async function handlePhotoRoutes(
         pose: pose || 'Front',
         weightAtCapture,
         notes,
-        createdAt: new Date().toISOString(),
+        dayNumber: photoDay,
+        createdAt: photoDate,
       },
     });
   }
