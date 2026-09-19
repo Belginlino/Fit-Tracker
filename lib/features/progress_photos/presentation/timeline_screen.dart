@@ -3,13 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:fittrack/app/theme/app_colors.dart';
 import 'package:fittrack/app/theme/app_typography.dart';
-import 'package:fittrack/core/utils/date_formatter.dart';
-import 'package:fittrack/core/widgets/app_photo_image.dart';
 import 'package:fittrack/core/widgets/empty_state_view.dart';
 import 'package:fittrack/core/widgets/neumorphic_container.dart';
 import 'package:fittrack/features/auth/data/auth_repository.dart';
 import '../data/progress_photo_repository.dart';
+import '../domain/day_photo_group.dart';
 import '../domain/progress_photo.dart';
+import 'widgets/day_folder_card.dart';
 
 class TimelineScreen extends ConsumerStatefulWidget {
   const TimelineScreen({super.key});
@@ -91,9 +91,23 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
             );
           }
 
-          final filtered = _selectedFilter == 'All'
-              ? photos
-              : photos.where((p) => p.pose == _selectedFilter).toList();
+          final List<DayPhotoGroup> dayGroups;
+          if (_selectedFilter == 'All') {
+            dayGroups = DayPhotoGroup.groupPhotos(photos);
+          } else {
+            final matching = photos
+                .where((p) =>
+                    p.pose.toLowerCase() == _selectedFilter.toLowerCase())
+                .toList();
+            dayGroups = matching
+                .map((p) => DayPhotoGroup(
+                      dayNumber: p.effectiveDayNumber,
+                      date: p.createdAt,
+                      photos: [p],
+                    ))
+                .toList()
+              ..sort((a, b) => b.dayNumber.compareTo(a.dayNumber));
+          }
 
           return Column(
             children: [
@@ -136,21 +150,35 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
 
               // Photo Grid
               Expanded(
-                child: GridView.builder(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 24,
-                    childAspectRatio: 0.65,
-                  ),
-                  itemCount: filtered.length,
-                  itemBuilder: (context, index) {
-                    final photo = filtered[index];
-                    return _buildGridCard(photo);
-                  },
-                ),
+                child: dayGroups.isEmpty
+                    ? Center(
+                        child: Text(
+                          'No $_selectedFilter photos found',
+                          style: AppTypography.bodyMedium,
+                        ),
+                      )
+                    : GridView.builder(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 16,
+                          mainAxisSpacing: 24,
+                          childAspectRatio: 0.65,
+                        ),
+                        itemCount: dayGroups.length,
+                        itemBuilder: (context, index) {
+                          final group = dayGroups[index];
+                          return DayFolderCard(
+                            group: group,
+                            onDelete: group.isFolder
+                                ? null
+                                : () =>
+                                    _confirmDeletePhoto(group.photos.first),
+                          );
+                        },
+                      ),
               ),
             ],
           );
@@ -225,129 +253,5 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
         );
       }
     }
-  }
-
-  Widget _buildGridCard(ProgressPhoto photo) {
-    return GestureDetector(
-      onTap: () => context.push('/progress/preview', extra: {
-        'photoId': photo.id,
-        'imagePath': photo.localFilePath ?? photo.downloadUrl ?? '',
-        'pose': photo.pose,
-        'selectedDate': photo.createdAt.toIso8601String(),
-        'dayNumber': photo.effectiveDayNumber,
-        'weight': photo.weightAtCapture,
-        'notes': photo.cleanNotes,
-        'isViewingExisting': true,
-      }),
-      onLongPress: () => _confirmDeletePhoto(photo),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: NeumorphicContainer(
-              borderRadius: 16,
-              padding: EdgeInsets.zero,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    AppPhotoImage(
-                      localPath: photo.localFilePath,
-                      remoteUrl: photo.downloadUrl,
-                      fit: BoxFit.cover,
-                    ),
-                    Positioned(
-                      top: 8,
-                      left: 8,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: photo.isDayOne
-                              ? const Color(0xFFD97706) // Warm gold for Day 1
-                              : Colors.black.withValues(alpha: 0.65),
-                          borderRadius: BorderRadius.circular(8),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.2),
-                              blurRadius: 4,
-                            ),
-                          ],
-                        ),
-                        child: Text(
-                          photo.isDayOne ? '★ Day 1' : photo.dayLabel,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.55),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              photo.pose,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          GestureDetector(
-                            onTap: () => _confirmDeletePhoto(photo),
-                            child: Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.65),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.delete_outline_rounded,
-                                color: Colors.white,
-                                size: 14,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            photo.isDayOne
-                ? 'Day 1 • Baseline'
-                : '${photo.dayLabel} • ${photo.pose}',
-            style: AppTypography.labelMedium.copyWith(
-              color: photo.isDayOne ? AppColors.primary : AppColors.textPrimary,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            DateFormatter.formatTimelineDate(photo.createdAt),
-            style: AppTypography.bodySmall.copyWith(fontSize: 11),
-          ),
-        ],
-      ),
-    );
   }
 }

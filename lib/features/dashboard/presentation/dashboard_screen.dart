@@ -5,10 +5,11 @@ import 'package:fittrack/app/theme/app_colors.dart';
 import 'package:fittrack/app/theme/app_typography.dart';
 import 'package:fittrack/core/widgets/app_button.dart';
 import 'package:fittrack/core/widgets/app_card.dart';
-import 'package:fittrack/core/widgets/app_photo_image.dart';
 import 'package:fittrack/core/widgets/neumorphic_container.dart';
 import 'package:fittrack/features/auth/data/auth_repository.dart';
 import 'package:fittrack/features/progress_photos/data/progress_photo_repository.dart';
+import 'package:fittrack/features/progress_photos/domain/day_photo_group.dart';
+import 'package:fittrack/features/progress_photos/presentation/widgets/day_folder_card.dart';
 import 'package:fittrack/features/workouts/data/workout_repository.dart';
 import 'package:fittrack/features/workouts/domain/workout.dart';
 import 'package:fittrack/core/utils/streak_calculator.dart';
@@ -442,13 +443,15 @@ class DashboardScreen extends ConsumerWidget {
                     );
                   }
 
+                  final dayGroups = DayPhotoGroup.groupPhotos(photosList);
+
                   return SizedBox(
                     height: 145,
                     child: ListView.builder(
                       scrollDirection: Axis.horizontal,
-                      itemCount: photosList.length + 1,
+                      itemCount: dayGroups.length + 1,
                       itemBuilder: (context, index) {
-                        if (index == photosList.length) {
+                        if (index == dayGroups.length) {
                           return Container(
                             width: 110,
                             margin: const EdgeInsets.only(right: 16),
@@ -477,80 +480,13 @@ class DashboardScreen extends ConsumerWidget {
                           );
                         }
 
-                        final photo = photosList[index];
+                        final group = dayGroups[index];
                         return Container(
                           width: 110,
                           margin: const EdgeInsets.only(right: 16),
-                          child: GestureDetector(
-                            onTap: () => context.push('/progress/preview', extra: {
-                              'photoId': photo.id,
-                              'imagePath': photo.localFilePath ?? photo.downloadUrl ?? '',
-                              'pose': photo.pose,
-                              'selectedDate': photo.createdAt.toIso8601String(),
-                              'dayNumber': photo.effectiveDayNumber,
-                              'weight': photo.weightAtCapture,
-                              'notes': photo.cleanNotes,
-                              'isViewingExisting': true,
-                            }),
-                            child: NeumorphicContainer(
-                              borderRadius: 16,
-                              padding: EdgeInsets.zero,
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(16),
-                                child: Stack(
-                                  fit: StackFit.expand,
-                                  children: [
-                                    AppPhotoImage(
-                                      localPath: photo.localFilePath,
-                                      remoteUrl: photo.downloadUrl,
-                                      fit: BoxFit.cover,
-                                    ),
-                                    Positioned(
-                                      top: 6,
-                                      left: 6,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 6, vertical: 3),
-                                        decoration: BoxDecoration(
-                                          color: photo.isDayOne
-                                              ? const Color(0xFFD97706)
-                                              : Colors.black.withValues(alpha: 0.65),
-                                          borderRadius: BorderRadius.circular(6),
-                                        ),
-                                        child: Text(
-                                          photo.isDayOne ? '★ Day 1' : photo.dayLabel,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    Positioned(
-                                      bottom: 6,
-                                      right: 6,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 5, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black.withValues(alpha: 0.65),
-                                          borderRadius: BorderRadius.circular(5),
-                                        ),
-                                        child: Text(
-                                          photo.pose,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 9,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
+                          child: DayFolderCard(
+                            group: group,
+                            isCompact: true,
                           ),
                         );
                       },
