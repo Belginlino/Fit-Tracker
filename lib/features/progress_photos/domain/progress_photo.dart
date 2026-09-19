@@ -34,7 +34,10 @@ class ProgressPhoto {
 
   String? get cleanNotes {
     if (notes == null) return null;
-    final cleaned = notes!.replaceAll(RegExp(r'\[Day\s*\d+\]\s*'), '').trim();
+    final cleaned = notes!
+        .replaceAll(RegExp(r'\[Day\s*\d+\]\s*', caseSensitive: false), '')
+        .replaceAll(RegExp(r'\bDay\s*\d+\b\s*', caseSensitive: false), '')
+        .trim();
     return cleaned.isNotEmpty ? cleaned : null;
   }
 
@@ -42,7 +45,7 @@ class ProgressPhoto {
 
   static int? _extractDayNumber(String? text) {
     if (text == null) return null;
-    final match = RegExp(r'\[Day\s*(\d+)\]', caseSensitive: false).firstMatch(text);
+    final match = RegExp(r'(?:\[Day\s*|(?:\bDay\s*))(\d+)', caseSensitive: false).firstMatch(text);
     if (match != null) {
       return int.tryParse(match.group(1) ?? '');
     }

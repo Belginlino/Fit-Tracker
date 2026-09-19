@@ -66,5 +66,31 @@ void main() {
       expect(restored.dayLabel, 'Day 15');
       expect(restored.cleanNotes, 'Feeling stronger');
     });
+
+    test('extracts flexible day numbers such as Day 15 and day 45', () {
+      expect(ProgressPhoto.extractDayNumber('Day 15 progress check'), 15);
+      expect(ProgressPhoto.extractDayNumber('[Day 45] check-in'), 45);
+      expect(ProgressPhoto.extractDayNumber('day 90 final milestone'), 90);
+    });
+
+    test('cleanNotes strips both [Day X] and Day X tags properly', () {
+      final p1 = ProgressPhoto(
+        id: 'p5',
+        userId: 'u1',
+        storagePath: 'path/5.jpg',
+        createdAt: DateTime(2026, 1, 15),
+        notes: '[Day 15] Gained 2kg muscle',
+      );
+      expect(p1.cleanNotes, 'Gained 2kg muscle');
+
+      final p2 = ProgressPhoto(
+        id: 'p6',
+        userId: 'u1',
+        storagePath: 'path/6.jpg',
+        createdAt: DateTime(2026, 1, 20),
+        notes: 'Day 20 Abs getting visible',
+      );
+      expect(p2.cleanNotes, 'Abs getting visible');
+    });
   });
 }

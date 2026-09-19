@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:appwrite/appwrite.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -17,6 +19,7 @@ abstract class ProgressPhotoRepository {
 }
 
 /// Appwrite Storage & Database implementation for Progress Photos with local persistence
+/// and cross-device cloud manifest synchronization.
 class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
   final _controller = StreamController<List<ProgressPhoto>>.broadcast();
   List<ProgressPhoto> _cache = [];
@@ -35,6 +38,13 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
     if (!_loadedUsers.contains(userId)) {
       await _loadFromLocal(userId);
     }
+
+    // If local cache already has photos with day numbers or dates (e.g. on mobile),
+    // sync manifest immediately to Appwrite cloud so other devices receive them
+    if (_cache.isNotEmpty) {
+      _syncManifest(userId);
+    }
+
     await _fetchAndEmit(userId);
   }
 
@@ -50,7 +60,7 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
                 Map<String, dynamic>.from(item), item['id'] as String? ?? ''))
             .toList();
         if (loaded.isNotEmpty) {
-          _cache = loaded;
+          _cache = _resolveDayNumbers(loaded);
           _controller.add(List.unmodifiable(_cache));
         }
       }
@@ -65,6 +75,226 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
       final raw = jsonEncode(_cache.map((p) => p.toMap()).toList());
       await prefs.setString(key, raw);
     } catch (_) {}
+  }
+
+  /// Resolve real Appwrite account ID if userId is empty or 'user-local'
+  Future<String> _resolveEffectiveUserId(String userId) async {
+    if (userId.isNotEmpty && userId != 'user-local') {
+      return userId;
+    }
+    try {
+      final acc = await AppwriteClient.instance.account.get();
+      return acc.$id;
+    } catch (_) {
+      return userId.isNotEmpty ? userId : 'default';
+    }
+  }
+
+  /// Save photo metadata manifest to Appwrite Storage and Account Prefs for cross-device sync
+  Future<void> _syncManifest(String userId) async {
+    if (!AppwriteConfig.isConfigured || _cache.isEmpty) return;
+
+    try {
+      final effectiveUserId = await _resolveEffectiveUserId(userId);
+      if (effectiveUserId == 'user-local' && userId == 'user-local') return;
+
+      final manifestData = _cache.map((p) => {
+        'id': p.id,
+        'storagePath': p.storagePath,
+        'downloadUrl': p.downloadUrl,
+        'dayNumber': p.dayNumber ?? p.effectiveDayNumber,
+        'createdAt': p.createdAt.toIso8601String(),
+        'pose': p.pose,
+        'weightAtCapture': p.weightAtCapture,
+        'notes': p.notes,
+        'workoutId': p.workoutId,
+      }).toList();
+
+      final jsonStr = jsonEncode(manifestData);
+
+      // 1. Sync to Appwrite Account Preferences
+      try {
+        await AppwriteClient.instance.account.updatePrefs(prefs: {
+          'photos_manifest_$effectiveUserId': jsonStr,
+          'photos_manifest': jsonStr,
+        });
+      } catch (_) {}
+
+      // 2. Sync to Appwrite Storage bucket file
+      try {
+        final storage = AppwriteClient.instance.storage;
+        final fileList = await storage.listFiles(
+          bucketId: AppwriteConfig.photosBucket,
+          queries: [Query.limit(100)],
+        );
+
+        final targetName = 'manifest_$effectiveUserId.json';
+        final oldManifestFiles = fileList.files
+            .where((f) => f.name == targetName || f.name == 'manifest.json')
+            .toList();
+
+        for (final oldFile in oldManifestFiles) {
+          try {
+            await storage.deleteFile(
+              bucketId: AppwriteConfig.photosBucket,
+              fileId: oldFile.$id,
+            );
+          } catch (_) {}
+        }
+
+        final bytes = utf8.encode(jsonStr);
+        await storage.createFile(
+          bucketId: AppwriteConfig.photosBucket,
+          fileId: ID.unique(),
+          file: InputFile.fromBytes(
+            bytes: bytes,
+            filename: targetName,
+          ),
+          permissions: [
+            Permission.read(Role.any()),
+            Permission.write(Role.any()),
+          ],
+        );
+      } catch (_) {}
+    } catch (_) {}
+  }
+
+  /// Load photo metadata manifest from Appwrite Account Prefs or Storage bucket
+  Future<Map<String, Map<String, dynamic>>> _loadManifest(String userId) async {
+    final result = <String, Map<String, dynamic>>{};
+    if (!AppwriteConfig.isConfigured) return result;
+
+    try {
+      final effectiveUserId = await _resolveEffectiveUserId(userId);
+
+      // 1. Try Account Preferences
+      try {
+        final prefs = await AppwriteClient.instance.account.getPrefs();
+        final raw = prefs.data['photos_manifest_$effectiveUserId'] as String? ??
+            prefs.data['photos_manifest'] as String?;
+        if (raw != null && raw.isNotEmpty) {
+          final dynamic decoded = jsonDecode(raw);
+          if (decoded is List) {
+            for (final item in decoded) {
+              if (item is Map) {
+                final m = Map<String, dynamic>.from(item);
+                final id = m['id'] as String? ?? '';
+                if (id.isNotEmpty) result[id] = m;
+                final sp = m['storagePath'] as String? ?? '';
+                if (sp.isNotEmpty) result[sp] = m;
+              }
+            }
+          }
+        }
+      } catch (_) {}
+
+      if (result.isNotEmpty) return result;
+
+      // 2. Try Appwrite Storage bucket manifest file
+      try {
+        final storage = AppwriteClient.instance.storage;
+        final fileList = await storage.listFiles(
+          bucketId: AppwriteConfig.photosBucket,
+          queries: [Query.limit(100)],
+        );
+
+        final targetName = 'manifest_$effectiveUserId.json';
+        final manifestFile = fileList.files
+            .where((f) => f.name == targetName || f.name == 'manifest.json')
+            .firstOrNull;
+
+        if (manifestFile != null) {
+          Uint8List? bytes;
+          try {
+            bytes = await storage.getFileDownload(
+              bucketId: AppwriteConfig.photosBucket,
+              fileId: manifestFile.$id,
+            );
+          } catch (_) {
+            final url = AppwriteClient.instance.getFileViewUrl(manifestFile.$id);
+            final res = await http.get(Uri.parse(url));
+            if (res.statusCode == 200) {
+              bytes = res.bodyBytes;
+            }
+          }
+
+          if (bytes != null && bytes.isNotEmpty) {
+            final jsonStr = utf8.decode(bytes);
+            final dynamic decoded = jsonDecode(jsonStr);
+            if (decoded is List) {
+              for (final item in decoded) {
+                if (item is Map) {
+                  final m = Map<String, dynamic>.from(item);
+                  final id = m['id'] as String? ?? '';
+                  if (id.isNotEmpty) result[id] = m;
+                  final sp = m['storagePath'] as String? ?? '';
+                  if (sp.isNotEmpty) result[sp] = m;
+                }
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    } catch (_) {}
+
+    return result;
+  }
+
+  /// Chronologically resolve and assign day numbers from baseline dates and progression
+  List<ProgressPhoto> _resolveDayNumbers(List<ProgressPhoto> inputPhotos) {
+    if (inputPhotos.isEmpty) return inputPhotos;
+
+    // Sort chronologically ascending (earliest first) to establish baseline
+    final sortedAsc = List<ProgressPhoto>.from(inputPhotos)
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+    final baselineDate = sortedAsc.first.createdAt;
+    final resolved = <ProgressPhoto>[];
+
+    for (int i = 0; i < sortedAsc.length; i++) {
+      final photo = sortedAsc[i];
+      final explicitDay =
+          photo.dayNumber ?? ProgressPhoto.extractDayNumber(photo.notes);
+
+      if (explicitDay != null) {
+        resolved.add(photo.copyWith(dayNumber: explicitDay));
+      } else {
+        final dPhoto =
+            DateTime(photo.createdAt.year, photo.createdAt.month, photo.createdAt.day);
+        final dBase =
+            DateTime(baselineDate.year, baselineDate.month, baselineDate.day);
+        final diffDays = dPhoto.difference(dBase).inDays;
+
+        int computedDay = diffDays >= 0 ? diffDays + 1 : 1;
+
+        // If multiple photos end up with Day 1 because they were uploaded in batch
+        // on the same date/timestamp with the same pose:
+        // ensure distinct progressive days so user doesn't see duplicate "Day 1" badges
+        if (computedDay == 1 && i > 0) {
+          final samePosePrevious =
+              resolved.where((p) => p.pose == photo.pose).toList();
+          if (samePosePrevious.isNotEmpty) {
+            final maxDay = samePosePrevious
+                .map((p) => p.effectiveDayNumber)
+                .reduce((a, b) => a > b ? a : b);
+            computedDay = maxDay + 1;
+          }
+        }
+
+        resolved.add(photo.copyWith(
+          dayNumber: computedDay,
+          notes: (photo.notes == null || photo.notes!.isEmpty)
+              ? '[Day $computedDay]'
+              : (photo.notes!.contains(RegExp(r'\[Day\s*\d+\]'))
+                  ? photo.notes
+                  : '[Day $computedDay] ${photo.notes}'),
+        ));
+      }
+    }
+
+    // Return sorted descending (newest first for UI displays)
+    resolved.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return resolved;
   }
 
   Future<void> _fetchAndEmit(String userId) async {
@@ -98,8 +328,7 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
           }
         }
 
-        merged.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        _cache = merged;
+        _cache = _resolveDayNumbers(merged);
       }
       _controller.add(List.unmodifiable(_cache));
       await _saveToLocal(userId);
@@ -110,52 +339,81 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
 
   @override
   Future<List<ProgressPhoto>> getPhotos(String userId) async {
-    if (!AppwriteConfig.isConfigured || userId.isEmpty || userId == 'user-local') {
+    if (!AppwriteConfig.isConfigured) {
       return _cache;
     }
+
+    final effectiveUserId = await _resolveEffectiveUserId(userId);
+    final manifestMap = await _loadManifest(effectiveUserId);
 
     final photos = <ProgressPhoto>[];
     final foundStorageIds = <String>{};
 
-    // 1. Try querying Appwrite Databases collection
+    // 1. Try querying Appwrite Databases collection (with fallbacks if unindexed)
     try {
       final db = AppwriteClient.instance.databases;
-      final records = await db.listDocuments(
-        databaseId: AppwriteConfig.databaseId,
-        collectionId: AppwriteConfig.progressPhotosCollection,
-        queries: [
-          Query.equal('user_id', userId),
-          Query.orderDesc('created_at'),
-          Query.limit(100),
-        ],
-      );
-
-      for (final doc in records.documents) {
-        final data = doc.data;
-        final fileId = (data['file_id'] ?? data['storage_path']) as String? ?? '';
-        String? downloadUrl;
-
-        if (fileId.isNotEmpty) {
-          downloadUrl = AppwriteClient.instance.getFileViewUrl(fileId);
-          foundStorageIds.add(fileId);
-        }
-
-        photos.add(
-          ProgressPhoto(
-            id: doc.$id,
-            userId: data['user_id'] as String? ?? userId,
-            storagePath: fileId,
-            downloadUrl: downloadUrl,
-            pose: data['pose'] as String? ?? 'Front',
-            workoutId: data['workout_id'] as String?,
-            weightAtCapture: (data['weight_at_capture'] as num?)?.toDouble(),
-            notes: data['notes'] as String?,
-            dayNumber: (data['day_number'] ?? data['dayNumber']) as int? ??
-                ProgressPhoto.extractDayNumber(data['notes'] as String?),
-            createdAt: DateTime.tryParse(data['created_at'] as String? ?? '') ??
-                DateTime.now(),
-          ),
+      dynamic records;
+      try {
+        records = await db.listDocuments(
+          databaseId: AppwriteConfig.databaseId,
+          collectionId: AppwriteConfig.progressPhotosCollection,
+          queries: [
+            Query.equal('user_id', effectiveUserId),
+            Query.orderDesc('created_at'),
+            Query.limit(100),
+          ],
         );
+      } catch (_) {
+        try {
+          records = await db.listDocuments(
+            databaseId: AppwriteConfig.databaseId,
+            collectionId: AppwriteConfig.progressPhotosCollection,
+            queries: [Query.limit(100)],
+          );
+        } catch (_) {}
+      }
+
+      if (records != null) {
+        for (final doc in records.documents) {
+          final data = doc.data;
+          final fileId =
+              (data['file_id'] ?? data['storage_path']) as String? ?? '';
+          String? downloadUrl;
+
+          if (fileId.isNotEmpty) {
+            downloadUrl = AppwriteClient.instance.getFileViewUrl(fileId);
+            foundStorageIds.add(fileId);
+          }
+
+          final manifestMatch = manifestMap[doc.$id] ?? manifestMap[fileId];
+
+          photos.add(
+            ProgressPhoto(
+              id: doc.$id,
+              userId: data['user_id'] as String? ?? effectiveUserId,
+              storagePath: fileId,
+              downloadUrl: downloadUrl,
+              pose: (manifestMatch?['pose'] as String?) ??
+                  (data['pose'] as String?) ??
+                  'Front',
+              workoutId: (manifestMatch?['workoutId'] as String?) ??
+                  (data['workout_id'] as String?),
+              weightAtCapture: (manifestMatch?['weightAtCapture'] as num?)
+                      ?.toDouble() ??
+                  (data['weight_at_capture'] as num?)?.toDouble(),
+              notes: (manifestMatch?['notes'] as String?) ??
+                  (data['notes'] as String?),
+              dayNumber: (manifestMatch?['dayNumber'] as int?) ??
+                  (data['day_number'] ?? data['dayNumber']) as int? ??
+                  ProgressPhoto.extractDayNumber(data['notes'] as String?),
+              createdAt: manifestMatch?['createdAt'] != null
+                  ? (DateTime.tryParse(manifestMatch!['createdAt'] as String) ??
+                      DateTime.now())
+                  : (DateTime.tryParse(data['created_at'] as String? ?? '') ??
+                      DateTime.now()),
+            ),
+          );
+        }
       }
     } catch (_) {
       // Database collection may not exist yet or request failed
@@ -179,26 +437,85 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
         }
 
         final fileName = file.name;
-        // Format: photo-1789663224300.jpeg or photo-1789663224300.jpg
+        // Skip manifest files from photo listing
+        if (fileName.startsWith('manifest') || fileName.endsWith('.json')) {
+          continue;
+        }
+
         final photoId = fileName.contains('.')
             ? fileName.split('.').first
             : (fileName.isNotEmpty ? fileName : 'photo-$fileId');
 
-        // Extract timestamp from filename (e.g. photo-1789663224300)
+        // Check manifest metadata match
+        final manifestMatch = manifestMap[photoId] ??
+            manifestMap[fileId] ??
+            manifestMap['photo-$fileId'];
+
+        // Check local cache match
+        final localMatch = _cache
+            .where((p) =>
+                p.id == photoId ||
+                p.storagePath == fileId ||
+                p.storagePath == photoId)
+            .firstOrNull;
+
+        // Resolve createdAt
         DateTime photoDate;
-        if (photoId.startsWith('photo-')) {
-          final msStr = photoId.replaceFirst('photo-', '');
-          final ms = int.tryParse(msStr);
-          photoDate = ms != null
-              ? DateTime.fromMillisecondsSinceEpoch(ms)
-              : (DateTime.tryParse(file.$createdAt) ?? DateTime.now());
+        if (manifestMatch != null && manifestMatch['createdAt'] != null) {
+          photoDate = DateTime.tryParse(manifestMatch['createdAt'] as String) ??
+              DateTime.now();
+        } else if (localMatch != null) {
+          photoDate = localMatch.createdAt;
         } else {
-          photoDate = DateTime.tryParse(file.$createdAt) ?? DateTime.now();
+          // Parse date from filename e.g. date1789800000000 or photo-1789800000000
+          final dateMatch = RegExp(r'date[-_]?(\d+)').firstMatch(fileName);
+          if (dateMatch != null) {
+            final ms = int.tryParse(dateMatch.group(1)!);
+            photoDate = ms != null
+                ? DateTime.fromMillisecondsSinceEpoch(ms)
+                : DateTime.now();
+          } else if (photoId.startsWith('photo-')) {
+            final msStr = photoId.replaceFirst('photo-', '');
+            final ms = int.tryParse(msStr);
+            photoDate = ms != null
+                ? DateTime.fromMillisecondsSinceEpoch(ms)
+                : (DateTime.tryParse(file.$createdAt) ?? DateTime.now());
+          } else {
+            photoDate = DateTime.tryParse(file.$createdAt) ?? DateTime.now();
+          }
         }
 
-        final localMatch = _cache
-            .where((p) => p.id == photoId || p.storagePath == fileId)
-            .firstOrNull;
+        // Resolve dayNumber
+        int? dayNum = (manifestMatch?['dayNumber'] ??
+                manifestMatch?['day_number']) as int? ??
+            localMatch?.dayNumber;
+        if (dayNum == null) {
+          final dayMatch =
+              RegExp(r'day[-_]?(\d+)', caseSensitive: false).firstMatch(fileName);
+          if (dayMatch != null) {
+            dayNum = int.tryParse(dayMatch.group(1)!);
+          }
+        }
+
+        // Resolve pose
+        String pose = (manifestMatch?['pose'] as String?) ??
+            localMatch?.pose ??
+            'Front';
+        if (pose == 'Front') {
+          final poseMatch =
+              RegExp(r'pose[-_]?([A-Za-z]+)', caseSensitive: false)
+                  .firstMatch(fileName);
+          if (poseMatch != null) {
+            pose = poseMatch.group(1)!;
+          }
+        }
+
+        // Resolve notes
+        String? notes = (manifestMatch?['notes'] as String?) ??
+            localMatch?.notes;
+        if (notes == null && dayNum != null) {
+          notes = '[Day $dayNum]';
+        }
 
         final downloadUrl = AppwriteClient.instance.getFileViewUrl(fileId);
         foundStorageIds.add(fileId);
@@ -206,16 +523,19 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
         photos.add(
           ProgressPhoto(
             id: photoId,
-            userId: userId,
+            userId: effectiveUserId,
             storagePath: fileId,
             downloadUrl: downloadUrl,
             localFilePath: localMatch?.localFilePath,
-            pose: localMatch?.pose ?? 'Front',
-            workoutId: localMatch?.workoutId,
-            weightAtCapture: localMatch?.weightAtCapture,
-            notes: localMatch?.notes,
-            dayNumber: localMatch?.dayNumber,
-            createdAt: localMatch?.createdAt ?? photoDate,
+            pose: pose,
+            workoutId: (manifestMatch?['workoutId'] as String?) ??
+                localMatch?.workoutId,
+            weightAtCapture: (manifestMatch?['weightAtCapture'] as num?)
+                    ?.toDouble() ??
+                localMatch?.weightAtCapture,
+            notes: notes,
+            dayNumber: dayNum,
+            createdAt: photoDate,
           ),
         );
       }
@@ -224,27 +544,34 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
     }
 
     if (photos.isNotEmpty) {
-      photos.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      return photos;
+      final resolved = _resolveDayNumbers(photos);
+      // If manifest was empty or missing items, sync resolved metadata to cloud
+      if (manifestMap.isEmpty || manifestMap.length < resolved.length) {
+        _cache = resolved;
+        _syncManifest(effectiveUserId);
+      }
+      return resolved;
     }
 
-    return _cache;
+    return _resolveDayNumbers(_cache);
   }
 
   @override
   Future<void> savePhoto(ProgressPhoto photo) async {
-    _cache.removeWhere((p) => p.id == photo.id);
+    _cache.removeWhere((p) => p.id == photo.id || p.storagePath == photo.storagePath);
     _cache.insert(0, photo);
-    _cache.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    _cache = _resolveDayNumbers(_cache);
     _controller.add(List.unmodifiable(_cache));
     await _saveToLocal(photo.userId);
 
-    if (!AppwriteConfig.isConfigured || photo.userId == 'user-local') return;
+    if (!AppwriteConfig.isConfigured) return;
 
+    final effectiveUserId = await _resolveEffectiveUserId(photo.userId);
     final permissions = [
-      Permission.read(Role.user(photo.userId)),
-      Permission.update(Role.user(photo.userId)),
-      Permission.delete(Role.user(photo.userId)),
+      Permission.read(Role.any()),
+      Permission.write(Role.any()),
+      Permission.update(Role.any()),
+      Permission.delete(Role.any()),
     ];
 
     String fileId = photo.storagePath;
@@ -266,12 +593,19 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
           final ext = isPng ? 'png' : 'jpg';
           final newFileId = ID.unique();
 
+          // Encode day, date, and pose into filename for bulletproof retrieval
+          final dayTag = 'day${photo.effectiveDayNumber}';
+          final dateTag = 'date${photo.createdAt.millisecondsSinceEpoch}';
+          final poseTag = 'pose${photo.pose}';
+          final newFilename =
+              '${photo.id}_${dayTag}_${dateTag}_$poseTag.$ext';
+
           final uploadedFile = await AppwriteClient.instance.storage.createFile(
             bucketId: AppwriteConfig.photosBucket,
             fileId: newFileId,
             file: InputFile.fromBytes(
               bytes: bytes,
-              filename: '${photo.id}.$ext',
+              filename: newFilename,
             ),
             permissions: permissions,
           );
@@ -286,18 +620,22 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
           );
           _cache.removeWhere((p) => p.id == photo.id);
           _cache.insert(0, updated);
-          _cache.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          _cache = _resolveDayNumbers(_cache);
           _controller.add(List.unmodifiable(_cache));
           await _saveToLocal(photo.userId);
         }
       } catch (_) {}
     }
 
-    // 2. Save metadata in Appwrite Databases if collection exists
+    // 2. Synchronize Cloud Manifest (Appwrite Storage & Account Prefs)
+    await _syncManifest(effectiveUserId);
+
+    // 3. Save metadata in Appwrite Databases if collection exists
     try {
-      final formattedNotes = photo.toMap()['notes'] as String? ?? photo.notes ?? '';
+      final formattedNotes =
+          photo.toMap()['notes'] as String? ?? photo.notes ?? '';
       final docData = {
-        'user_id': photo.userId,
+        'user_id': effectiveUserId,
         'file_id': fileId,
         'storage_path': fileId,
         'pose': photo.pose,
@@ -326,7 +664,8 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
               permissions: permissions,
             );
           } catch (_) {
-            final fallback = Map<String, dynamic>.from(docData)..remove('day_number');
+            final fallback = Map<String, dynamic>.from(docData)
+              ..remove('day_number');
             try {
               await AppwriteClient.instance.databases.createDocument(
                 databaseId: AppwriteConfig.databaseId,
@@ -338,8 +677,8 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
             } catch (_) {}
           }
         } else {
-          // If error 400 (e.g. unknown attribute day_number), retry update without day_number
-          final fallback = Map<String, dynamic>.from(docData)..remove('day_number');
+          final fallback = Map<String, dynamic>.from(docData)
+            ..remove('day_number');
           try {
             await AppwriteClient.instance.databases.updateDocument(
               databaseId: AppwriteConfig.databaseId,
@@ -362,6 +701,7 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
         .where((p) => p.id == photoId || p.storagePath == photoId)
         .firstOrNull;
     _cache.removeWhere((p) => p.id == photoId || p.storagePath == photoId);
+    _cache = _resolveDayNumbers(_cache);
     _controller.add(List.unmodifiable(_cache));
     await _saveToLocal(uid);
 
@@ -386,7 +726,6 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
         AppPhotoImage.evict(fileId);
       } catch (_) {}
     } else {
-      // If photoId was a timestamp ID like photo-1789663224300, search storage files by name
       try {
         final storageFiles = await AppwriteClient.instance.storage.listFiles(
           bucketId: AppwriteConfig.photosBucket,
@@ -416,7 +755,8 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
           documentId: docId,
         );
         final docFileId =
-            (existing.data['file_id'] ?? existing.data['storage_path']) as String?;
+            (existing.data['file_id'] ?? existing.data['storage_path'])
+                as String?;
         if (docFileId != null && docFileId.isNotEmpty) {
           await AppwriteClient.instance.storage.deleteFile(
             bucketId: AppwriteConfig.photosBucket,
@@ -432,6 +772,9 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
         documentId: docId,
       );
     } catch (_) {}
+
+    // 3. Update Cloud Manifest
+    await _syncManifest(uid);
   }
 }
 
