@@ -267,18 +267,19 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
 
         int computedDay = diffDays >= 0 ? diffDays + 1 : 1;
 
-        // If multiple photos end up with Day 1 because they were uploaded in batch
+        // If multiple photos end up with the same day because they were uploaded in batch
         // on the same date/timestamp with the same pose:
-        // ensure distinct progressive days so user doesn't see duplicate "Day 1" badges
-        if (computedDay == 1 && i > 0) {
-          final samePosePrevious =
-              resolved.where((p) => p.pose == photo.pose).toList();
-          if (samePosePrevious.isNotEmpty) {
-            final maxDay = samePosePrevious
-                .map((p) => p.effectiveDayNumber)
-                .reduce((a, b) => a > b ? a : b);
-            computedDay = maxDay + 1;
-          }
+        // ensure distinct progressive days so user doesn't see duplicate day badges
+        final samePosePrevious =
+            resolved.where((p) => p.pose == photo.pose).toList();
+        final isDuplicateDay =
+            samePosePrevious.any((p) => p.effectiveDayNumber == computedDay);
+
+        if (isDuplicateDay) {
+          final maxDay = samePosePrevious
+              .map((p) => p.effectiveDayNumber)
+              .reduce((a, b) => a > b ? a : b);
+          computedDay = maxDay + 1;
         }
 
         resolved.add(photo.copyWith(
