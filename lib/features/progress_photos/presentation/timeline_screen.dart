@@ -235,6 +235,7 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
         'pose': photo.pose,
         'selectedDate': photo.createdAt.toIso8601String(),
         'dayNumber': photo.effectiveDayNumber,
+        'weight': photo.weightAtCapture,
         'notes': photo.cleanNotes,
         'isViewingExisting': true,
       }),

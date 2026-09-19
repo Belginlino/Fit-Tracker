@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:appwrite/appwrite.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fittrack/core/appwrite/appwrite_client.dart';
 import 'package:fittrack/core/appwrite/appwrite_config.dart';
@@ -151,6 +151,8 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
             workoutId: data['workout_id'] as String?,
             weightAtCapture: (data['weight_at_capture'] as num?)?.toDouble(),
             notes: data['notes'] as String?,
+            dayNumber: (data['day_number'] ?? data['dayNumber']) as int? ??
+                ProgressPhoto.extractDayNumber(data['notes'] as String?),
             createdAt: DateTime.tryParse(data['created_at'] as String? ?? '') ??
                 DateTime.now(),
           ),
@@ -234,6 +236,7 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
   Future<void> savePhoto(ProgressPhoto photo) async {
     _cache.removeWhere((p) => p.id == photo.id);
     _cache.insert(0, photo);
+    _cache.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     _controller.add(List.unmodifiable(_cache));
     await _saveToLocal(photo.userId);
 
@@ -248,40 +251,51 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
     String fileId = photo.storagePath;
     String? downloadUrl = photo.downloadUrl;
 
+    // 1. Upload photo binary to Appwrite Storage if a new local file exists
+    if (photo.localFilePath != null && !photo.localFilePath!.startsWith('http')) {
+      try {
+        final file = File(photo.localFilePath!);
+        final needsUpload = file.existsSync() &&
+            (photo.downloadUrl == null ||
+                photo.downloadUrl!.isEmpty ||
+                fileId.isEmpty ||
+                fileId.contains('/'));
+
+        if (needsUpload) {
+          final bytes = await file.readAsBytes();
+          final isPng = photo.localFilePath!.toLowerCase().endsWith('.png');
+          final ext = isPng ? 'png' : 'jpg';
+          final newFileId = ID.unique();
+
+          final uploadedFile = await AppwriteClient.instance.storage.createFile(
+            bucketId: AppwriteConfig.photosBucket,
+            fileId: newFileId,
+            file: InputFile.fromBytes(
+              bytes: bytes,
+              filename: '${photo.id}.$ext',
+            ),
+            permissions: permissions,
+          );
+
+          fileId = uploadedFile.$id;
+          downloadUrl = AppwriteClient.instance.getFileViewUrl(fileId);
+
+          // Update cache & local storage immediately with verified fileId & downloadUrl
+          final updated = photo.copyWith(
+            storagePath: fileId,
+            downloadUrl: downloadUrl,
+          );
+          _cache.removeWhere((p) => p.id == photo.id);
+          _cache.insert(0, updated);
+          _cache.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          _controller.add(List.unmodifiable(_cache));
+          await _saveToLocal(photo.userId);
+        }
+      } catch (_) {}
+    }
+
+    // 2. Save metadata in Appwrite Databases if collection exists
     try {
-      // 1. Upload photo binary to Appwrite Storage if local file exists
-      if (photo.localFilePath != null) {
-        final xFile = XFile(photo.localFilePath!);
-        final bytes = await xFile.readAsBytes();
-        final isPng = photo.localFilePath!.toLowerCase().endsWith('.png');
-        final ext = isPng ? 'png' : 'jpg';
-        final newFileId = ID.unique();
-
-        final uploadedFile = await AppwriteClient.instance.storage.createFile(
-          bucketId: AppwriteConfig.photosBucket,
-          fileId: newFileId,
-          file: InputFile.fromBytes(
-            bytes: bytes,
-            filename: '${photo.id}.$ext',
-          ),
-          permissions: permissions,
-        );
-
-        fileId = uploadedFile.$id;
-        downloadUrl = AppwriteClient.instance.getFileViewUrl(fileId);
-
-        // Update cache & local storage immediately with verified fileId & downloadUrl
-        final updated = photo.copyWith(
-          storagePath: fileId,
-          downloadUrl: downloadUrl,
-        );
-        _cache.removeWhere((p) => p.id == photo.id);
-        _cache.insert(0, updated);
-        _controller.add(List.unmodifiable(_cache));
-        await _saveToLocal(photo.userId);
-      }
-
-      // 2. Save metadata in Appwrite Databases if collection exists
       final docData = {
         'user_id': photo.userId,
         'file_id': fileId,
@@ -290,6 +304,7 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
         'workout_id': photo.workoutId ?? '',
         'weight_at_capture': photo.weightAtCapture ?? 0.0,
         'notes': photo.notes ?? '',
+        'day_number': photo.effectiveDayNumber,
         'created_at': photo.createdAt.toIso8601String(),
       };
 
@@ -312,7 +327,7 @@ class AppwriteProgressPhotoRepository implements ProgressPhotoRepository {
             );
           } catch (_) {}
         }
-      } catch (_) {}
+      }
     } catch (_) {
       // Remote sync error caught; local photo remains visible and persistent
     }

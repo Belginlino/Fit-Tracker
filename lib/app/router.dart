@@ -131,6 +131,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                 ? DateTime.tryParse(extra!['selectedDate'] as String)
                 : null,
             initialDayNumber: extra?['dayNumber'] as int?,
+            initialWeight: (extra?['weight'] as num?)?.toDouble(),
             isViewingExisting: extra?['isViewingExisting'] as bool? ?? false,
           );
         },

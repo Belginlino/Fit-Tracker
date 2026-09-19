@@ -10,6 +10,7 @@ import 'package:fittrack/core/widgets/app_text_field.dart';
 import 'package:fittrack/core/widgets/neumorphic_container.dart';
 import 'package:fittrack/features/auth/data/auth_repository.dart';
 import '../data/progress_photo_repository.dart';
+import '../domain/progress_photo.dart';
 
 import 'package:intl/intl.dart';
 
@@ -30,21 +31,46 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final user = ref.read(currentUserProfileProvider);
-      if (user != null) {
-        final photos =
-            ref.read(progressPhotosStreamProvider(user.id)).value ?? [];
-        if (photos.isNotEmpty) {
-          final maxDay = photos
-              .map((p) => p.effectiveDayNumber)
-              .reduce((a, b) => a > b ? a : b);
-          setState(() {
-            _selectedDay = maxDay + 1;
-          });
-        }
+    Future.microtask(() => _initDayNumber());
+  }
+
+  Future<void> _initDayNumber() async {
+    final user = ref.read(currentUserProfileProvider);
+    if (user != null) {
+      final repo = ref.read(progressPhotoRepositoryProvider);
+      final photos = await repo.getPhotos(user.id);
+      if (photos.isNotEmpty && mounted) {
+        _updateDayForPhotosAndDate(photos, _selectedDate);
       }
-    });
+    }
+  }
+
+  void _updateDayForPhotosAndDate(List<ProgressPhoto> photos, DateTime targetDate) {
+    final sameDatePhotos = photos.where((p) =>
+        p.createdAt.year == targetDate.year &&
+        p.createdAt.month == targetDate.month &&
+        p.createdAt.day == targetDate.day).toList();
+
+    if (sameDatePhotos.isNotEmpty) {
+      setState(() {
+        _selectedDay = sameDatePhotos.first.effectiveDayNumber;
+      });
+    } else {
+      final baselineDate = photos
+          .map((p) => p.createdAt)
+          .reduce((a, b) => a.isBefore(b) ? a : b);
+      final diffDays = DateTime(targetDate.year, targetDate.month, targetDate.day)
+              .difference(DateTime(
+                  baselineDate.year, baselineDate.month, baselineDate.day))
+              .inDays +
+          1;
+      final maxDay = photos
+          .map((p) => p.effectiveDayNumber)
+          .reduce((a, b) => a > b ? a : b);
+      setState(() {
+        _selectedDay = diffDays > maxDay ? diffDays : maxDay + 1;
+      });
+    }
   }
 
   @override
@@ -73,13 +99,22 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
         );
       },
     );
-    if (picked != null) {
+    if (picked != null && mounted) {
       setState(() => _selectedDate = picked);
+      final user = ref.read(currentUserProfileProvider);
+      if (user != null) {
+        final repo = ref.read(progressPhotoRepositoryProvider);
+        final photos = await repo.getPhotos(user.id);
+        if (photos.isNotEmpty && mounted) {
+          _updateDayForPhotosAndDate(photos, picked);
+        }
+      }
     }
   }
 
   Future<void> _capture(ImageSource source) async {
     try {
+      final user = ref.read(currentUserProfileProvider);
       if (source == ImageSource.gallery) {
         final List<XFile> images = await _picker.pickMultiImage(
           maxWidth: 1920,
@@ -94,6 +129,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
             'notes': _notesController.text,
             'selectedDate': _selectedDate.toIso8601String(),
             'dayNumber': _selectedDay,
+            'weight': user?.currentWeight,
           });
         }
       } else {
@@ -111,6 +147,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
             'notes': _notesController.text,
             'selectedDate': _selectedDate.toIso8601String(),
             'dayNumber': _selectedDay,
+            'weight': user?.currentWeight,
           });
         }
       }

@@ -29,6 +29,7 @@ class PhotoPreviewScreen extends ConsumerStatefulWidget {
   final String? initialNotes;
   final DateTime? initialDate;
   final int? initialDayNumber;
+  final double? initialWeight;
   final bool isViewingExisting;
 
   const PhotoPreviewScreen({
@@ -40,6 +41,7 @@ class PhotoPreviewScreen extends ConsumerStatefulWidget {
     this.initialNotes,
     this.initialDate,
     this.initialDayNumber,
+    this.initialWeight,
     this.isViewingExisting = false,
   });
 
@@ -77,8 +79,8 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
     _selectedDate = widget.initialDate ?? DateTime.now();
     _selectedDay = widget.initialDayNumber ?? 1;
 
-    final initialWeight =
-        ref.read(currentUserProfileProvider)?.currentWeight ?? 70.0;
+    final user = ref.read(currentUserProfileProvider);
+    final initialWeight = widget.initialWeight ?? user?.currentWeight ?? 70.0;
     _weightController =
         TextEditingController(text: initialWeight.toStringAsFixed(1));
     _notesController = TextEditingController(text: widget.initialNotes ?? '');
@@ -116,9 +118,157 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
         );
       },
     );
-    if (picked != null) {
-      setState(() => _selectedDate = picked);
+    if (picked != null && mounted) {
+      setState(() {
+        _selectedDate = picked;
+        // If recording a new photo, automatically suggest day number based on baseline date
+        if (!widget.isViewingExisting) {
+          final user = ref.read(currentUserProfileProvider);
+          if (user != null) {
+            final photos =
+                ref.read(progressPhotosStreamProvider(user.id)).value ?? [];
+            if (photos.isNotEmpty) {
+              final baseline = photos
+                  .map((p) => p.createdAt)
+                  .reduce((a, b) => a.isBefore(b) ? a : b);
+              final diff = DateTime(picked.year, picked.month, picked.day)
+                      .difference(DateTime(
+                          baseline.year, baseline.month, baseline.day))
+                      .inDays +
+                  1;
+              if (diff >= 1) {
+                _selectedDay = diff;
+              }
+            }
+          }
+        }
+      });
     }
+  }
+
+  Future<void> _showCustomDayDialog() async {
+    final controller = TextEditingController(text: _selectedDay.toString());
+    final result = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardBackground,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Enter Day Number', style: AppTypography.titleMedium),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            hintText: 'e.g. 1, 30, 90',
+            labelText: 'Day Number',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              final val = int.tryParse(controller.text.trim());
+              if (val != null && val >= 1) {
+                Navigator.pop(ctx, val);
+              } else {
+                Navigator.pop(ctx);
+              }
+            },
+            child: const Text('Set'),
+          ),
+        ],
+      ),
+    );
+    if (result != null && mounted) {
+      setState(() => _selectedDay = result);
+    }
+  }
+
+  Future<void> _replacePhoto() async {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.cardBackground,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Replace Photo', style: AppTypography.titleMedium),
+                const SizedBox(height: 16),
+                ListTile(
+                  leading: const Icon(Icons.camera_alt_outlined,
+                      color: AppColors.primary),
+                  title: const Text('Take with Camera',
+                      style: AppTypography.bodyMedium),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    final img = await _picker.pickImage(
+                        source: ImageSource.camera,
+                        maxWidth: 1920,
+                        maxHeight: 1920,
+                        imageQuality: 88);
+                    if (img != null && mounted) {
+                      setState(() {
+                        if (_photos.isNotEmpty) {
+                          _photos[_currentIndex] = PhotoItem(
+                            path: img.path,
+                            pose: _photos[_currentIndex].pose,
+                          );
+                        } else {
+                          _photos.add(PhotoItem(
+                              path: img.path, pose: widget.initialPose));
+                          _currentIndex = 0;
+                        }
+                      });
+                    }
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined,
+                      color: AppColors.primary),
+                  title: const Text('Choose from Gallery',
+                      style: AppTypography.bodyMedium),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    final img = await _picker.pickImage(
+                        source: ImageSource.gallery,
+                        maxWidth: 1920,
+                        maxHeight: 1920,
+                        imageQuality: 88);
+                    if (img != null && mounted) {
+                      setState(() {
+                        if (_photos.isNotEmpty) {
+                          _photos[_currentIndex] = PhotoItem(
+                            path: img.path,
+                            pose: _photos[_currentIndex].pose,
+                          );
+                        } else {
+                          _photos.add(PhotoItem(
+                              path: img.path, pose: widget.initialPose));
+                          _currentIndex = 0;
+                        }
+                      });
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _addMorePhotos() async {
@@ -202,29 +352,72 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
 
     final userId = user?.id ?? 'user-local';
 
-    for (int i = 0; i < _photos.length; i++) {
-      final p = _photos[i];
-      final timestamp = DateTime.now().millisecondsSinceEpoch + i;
-      final newPhoto = ProgressPhoto(
-        id: 'photo-$timestamp',
+    if (widget.isViewingExisting &&
+        widget.photoId != null &&
+        widget.photoId!.isNotEmpty) {
+      // UPDATE EXISTING PHOTO: Update in-place, DO NOT create duplicates
+      final existingPhotos = await photoRepo.getPhotos(userId);
+      final existing =
+          existingPhotos.where((p) => p.id == widget.photoId).firstOrNull;
+
+      final currentItem = _currentPhoto;
+      final currentPath = currentItem?.path ?? widget.imagePath;
+
+      final isNewLocalFile = currentPath != null &&
+          !currentPath.startsWith('http') &&
+          currentPath != existing?.localFilePath &&
+          currentPath != existing?.downloadUrl;
+
+      final updatedPhoto = ProgressPhoto(
+        id: widget.photoId!,
         userId: userId,
-        storagePath: 'users/$userId/progress_photos/$timestamp.jpg',
-        localFilePath: p.path,
+        storagePath: isNewLocalFile
+            ? 'users/$userId/progress_photos/${DateTime.now().millisecondsSinceEpoch}.jpg'
+            : (existing?.storagePath ?? currentPath ?? ''),
+        downloadUrl: isNewLocalFile ? null : existing?.downloadUrl,
+        localFilePath: isNewLocalFile
+            ? currentPath
+            : (existing?.localFilePath ?? currentPath),
         createdAt: _selectedDate,
         dayNumber: _selectedDay,
-        pose: p.pose,
+        pose: currentItem?.pose ?? widget.initialPose,
         weightAtCapture: currentWeight,
         notes: _notesController.text.trim().isNotEmpty
             ? _notesController.text.trim()
             : null,
+        workoutId: existing?.workoutId,
       );
 
-      await photoRepo.savePhoto(newPhoto);
+      await photoRepo.savePhoto(updatedPhoto);
+    } else {
+      // SAVE NEW PHOTOS: Create new entries for new session
+      for (int i = 0; i < _photos.length; i++) {
+        final p = _photos[i];
+        final timestamp = DateTime.now().millisecondsSinceEpoch + i;
+        final newPhoto = ProgressPhoto(
+          id: 'photo-$timestamp',
+          userId: userId,
+          storagePath: 'users/$userId/progress_photos/$timestamp.jpg',
+          localFilePath: p.path,
+          createdAt: _selectedDate,
+          dayNumber: _selectedDay,
+          pose: p.pose,
+          weightAtCapture: currentWeight,
+          notes: _notesController.text.trim().isNotEmpty
+              ? _notesController.text.trim()
+              : null,
+        );
+
+        await photoRepo.savePhoto(newPhoto);
+      }
     }
 
     if (user != null) {
       final existingPhotos = await photoRepo.getPhotos(user.id);
-      final allPhotoDates = [_selectedDate, ...existingPhotos.map((p) => p.createdAt)];
+      final allPhotoDates = [
+        _selectedDate,
+        ...existingPhotos.map((p) => p.createdAt)
+      ];
       final accurateStreak = StreakCalculator.calculateStreak(allPhotoDates);
 
       await authRepo.updateProfile(user.copyWith(
@@ -235,17 +428,23 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
 
     if (mounted) {
       setState(() => _isSaving = false);
-      final countStr = _photos.length == 1
-          ? 'Day $_selectedDay progress photo saved! ✓'
-          : '${_photos.length} progress photos saved for Day $_selectedDay! ✓';
+      final msg = widget.isViewingExisting
+          ? 'Day $_selectedDay progress photo updated! ✓'
+          : (_photos.length == 1
+              ? 'Day $_selectedDay progress photo saved! ✓'
+              : '${_photos.length} progress photos saved for Day $_selectedDay! ✓');
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(countStr),
+          content: Text(msg),
           backgroundColor: AppColors.success,
         ),
       );
-      context.go('/home');
+      if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go('/home');
+      }
     }
   }
 
@@ -562,6 +761,41 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
                                   ),
                                 ),
                               ),
+                              if (widget.isViewingExisting)
+                                Positioned(
+                                  bottom: 12,
+                                  right: 12,
+                                  child: GestureDetector(
+                                    onTap: _replacePhoto,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(alpha: 0.75),
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(
+                                          color: Colors.white.withValues(alpha: 0.2),
+                                        ),
+                                      ),
+                                      child: const Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.camera_alt_outlined,
+                                              color: Colors.white, size: 14),
+                                          SizedBox(width: 4),
+                                          Text(
+                                            'Change Photo',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
                         ),
@@ -594,55 +828,205 @@ class _PhotoPreviewScreenState extends ConsumerState<PhotoPreviewScreen> {
 
               const SizedBox(height: 20),
 
-              // Day & Date Info Card
+              // Interactive Transformation Day & Date Card
               NeumorphicContainer(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                borderRadius: 16,
-                child: Row(
+                padding: const EdgeInsets.all(16),
+                borderRadius: 18,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: _selectedDay == 1
-                            ? AppColors.primary
-                            : AppColors.primary.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        _selectedDay == 1
-                            ? 'Day 1 ★ Baseline'
-                            : 'Day $_selectedDay',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: _selectedDay == 1
-                              ? Colors.white
-                              : AppColors.primary,
+                    // Day Stepper Row
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Text('Transformation Day',
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.textPrimary,
+                                    )),
+                                const SizedBox(width: 8),
+                                if (_selectedDay == 1)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 7, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFD97706),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: const Text(
+                                      '★ Baseline',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _selectedDay == 1
+                                  ? 'Day 1 is your starting baseline'
+                                  : 'Day $_selectedDay milestone of your journey',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
                         ),
+                        // Stepper (- / +)
+                        Row(
+                          children: [
+                            GestureDetector(
+                              onTap: () {
+                                if (_selectedDay > 1) {
+                                  setState(() => _selectedDay--);
+                                }
+                              },
+                              child: const NeumorphicContainer(
+                                width: 34,
+                                height: 34,
+                                shape: BoxShape.circle,
+                                child: Icon(Icons.remove,
+                                    size: 16, color: AppColors.primary),
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: _showCustomDayDialog,
+                              child: Container(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 12),
+                                child: Text(
+                                  'Day $_selectedDay',
+                                  style: const TextStyle(
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () {
+                                setState(() => _selectedDay++);
+                              },
+                              child: const NeumorphicContainer(
+                                width: 34,
+                                height: 34,
+                                shape: BoxShape.circle,
+                                child: Icon(Icons.add,
+                                    size: 16, color: AppColors.primary),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    // Quick Milestone Preset Chips
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [1, 7, 14, 30, 60, 90, 180].map((d) {
+                          final isSelected = _selectedDay == d;
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: GestureDetector(
+                              onTap: () => setState(() => _selectedDay = d),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 11, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? AppColors.primary
+                                      : AppColors.cardBackground,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? AppColors.primary
+                                        : AppColors.border,
+                                  ),
+                                ),
+                                child: Text(
+                                  d == 1 ? 'Day 1 (Baseline)' : 'Day $d',
+                                  style: TextStyle(
+                                    color: isSelected
+                                        ? Colors.white
+                                        : AppColors.textPrimary,
+                                    fontWeight: isSelected
+                                        ? FontWeight.w800
+                                        : FontWeight.w500,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(),
                       ),
                     ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    const SizedBox(height: 14),
+                    const Divider(color: AppColors.border, height: 1),
+                    const SizedBox(height: 12),
+                    // Recorded Date Row
+                    GestureDetector(
+                      onTap: _pickDate,
+                      child: Row(
                         children: [
-                          const Text('Recorded For',
-                              style: AppTypography.bodySmall),
-                          Text(
-                            DateFormat('EEE, MMM d, yyyy').format(_selectedDate),
-                            style:
-                                AppTypography.titleMedium.copyWith(fontSize: 14),
+                          const Icon(Icons.calendar_month_rounded,
+                              color: AppColors.primary, size: 22),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Recorded Date',
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: AppColors.textSecondary)),
+                                Text(
+                                  DateFormat('EEEE, MMM d, yyyy')
+                                      .format(_selectedDate),
+                                  style: AppTypography.titleMedium
+                                      .copyWith(fontSize: 14),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.edit_calendar_rounded,
+                                    size: 15, color: AppColors.primary),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Change',
+                                  style: TextStyle(
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.edit_calendar_rounded,
-                          color: AppColors.primary, size: 22),
-                      tooltip: 'Change Date',
-                      onPressed: _pickDate,
                     ),
                   ],
                 ),

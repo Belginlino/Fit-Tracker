@@ -38,6 +38,8 @@ class ProgressPhoto {
     return cleaned.isNotEmpty ? cleaned : null;
   }
 
+  static int? extractDayNumber(String? text) => _extractDayNumber(text);
+
   static int? _extractDayNumber(String? text) {
     if (text == null) return null;
     final match = RegExp(r'\[Day\s*(\d+)\]', caseSensitive: false).firstMatch(text);
@@ -88,11 +90,14 @@ class ProgressPhoto {
       'userId': userId,
       'storagePath': storagePath,
       'downloadUrl': downloadUrl,
+      'localFilePath': localFilePath,
       'createdAt': createdAt.toIso8601String(),
       'workoutId': workoutId,
       'pose': pose,
       'weightAtCapture': weightAtCapture,
       'notes': formattedNotes,
+      'dayNumber': resolvedDay,
+      'day_number': resolvedDay,
     };
   }
 
@@ -106,6 +111,7 @@ class ProgressPhoto {
       userId: map['userId'] as String? ?? map['user_id'] as String? ?? '',
       storagePath: map['storagePath'] as String? ?? map['storage_path'] as String? ?? '',
       downloadUrl: map['downloadUrl'] as String?,
+      localFilePath: map['localFilePath'] as String? ?? map['local_file_path'] as String?,
       createdAt: map['createdAt'] != null
           ? DateTime.tryParse(map['createdAt'] as String) ?? DateTime.now()
           : map['created_at'] != null

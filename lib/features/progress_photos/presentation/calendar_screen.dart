@@ -298,6 +298,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                   'pose': p.pose,
                   'selectedDate': p.createdAt.toIso8601String(),
                   'dayNumber': p.effectiveDayNumber,
+                  'weight': p.weightAtCapture,
                   'notes': p.cleanNotes,
                   'isViewingExisting': true,
                 }),

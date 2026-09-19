@@ -488,6 +488,7 @@ class DashboardScreen extends ConsumerWidget {
                               'pose': photo.pose,
                               'selectedDate': photo.createdAt.toIso8601String(),
                               'dayNumber': photo.effectiveDayNumber,
+                              'weight': photo.weightAtCapture,
                               'notes': photo.cleanNotes,
                               'isViewingExisting': true,
                             }),
@@ -522,6 +523,26 @@ class DashboardScreen extends ConsumerWidget {
                                             color: Colors.white,
                                             fontSize: 10,
                                             fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    Positioned(
+                                      bottom: 6,
+                                      right: 6,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 5, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withValues(alpha: 0.65),
+                                          borderRadius: BorderRadius.circular(5),
+                                        ),
+                                        child: Text(
+                                          photo.pose,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.bold,
                                           ),
                                         ),
                                       ),
